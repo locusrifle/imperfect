@@ -112,7 +112,7 @@ test('on a Mac, a file\'s right-click menu opens it in its app or shows it in Fi
   await item('blob.bin').click({ button: 'right' });
   const menu = page.locator('.workbench-menu');
   await menu.getByRole('menuitem', { name: 'Open with Hex Fiend' }).waitFor();
-  assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['Open in new view', 'Download', 'Open with Hex Fiend', 'Show in Finder', 'Copy Path', 'Move to Trash']);
+  assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['Open with Hex Fiend', 'Show in Finder', 'Copy Path', 'Move to Trash']);
   assert.equal(await item('blob.bin').getAttribute('aria-selected'), 'true', 'what was clicked is what the menu is for');
   await menu.getByRole('menuitem', { name: 'Open with Hex Fiend' }).click();
   await page.waitForFunction(() => asked.length === 1);
@@ -138,8 +138,8 @@ test('on a Mac, a file\'s right-click menu opens it in its app or shows it in Fi
   // Another computer's files open there, not on this Mac.
   await page.evaluate(path => workbench.open(path, { base: '/peer/desktop' }), docs);
   await item('blob.bin').click({ button: 'right' });
-  await menu.getByRole('menuitem', { name: 'Open in new view' }).waitFor();
-  assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['Open in new view', 'Download', 'Copy Path', 'Move to Trash']);
+  await menu.getByRole('menuitem', { name: 'Copy Path' }).waitFor();
+  assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['Copy Path', 'Move to Trash']);
 }));
 
 test('anywhere but a Mac\'s window, right-click is the browser\'s and a file with no preview offers nothing more', { timeout: 120000 }, () => withWorkbench(false, async ({ page, docs, item }) => {

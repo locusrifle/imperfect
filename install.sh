@@ -349,9 +349,19 @@ teardown() {
 
 # A Mac has its own installer (desktop/mac/install.mjs): imperfect.app in the
 # Dock, which keeps the machine running, in place of systemd units and
-# .desktop files. Node comes the same way, through mise if need be.
+# .desktop files. Node comes the same way, through mise if need be: the node
+# the person's own PATH names first, then where Homebrew, mise and the like
+# put theirs, for a shell started without the person's profile.
 if [[ "$(uname -s)" == Darwin && "${1:-install}" =~ ^(install|undo)$ ]]; then
-  export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:$PATH"
+  export PATH="$PATH:$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin"
+  # A new Mac has no node, and nothing to install it with: mise, fetched once
+  # for this user (~/.local/bin/mise, checked against its checksum), installs
+  # node 22 for this checkout alone.
+  if ! node_ok && ! command -v mise >/dev/null 2>&1; then
+    say "installing mise (~/.local/bin/mise), to install node 22 with"
+    curl -fsSL https://mise.run | MISE_QUIET=1 MISE_INSTALL_HELP=0 sh \
+      || die "could not install mise; install node 22 or newer, then run this again"
+  fi
   ensure_node
   if [[ "${1:-install}" == undo ]]; then exec "$(node_binary)" "$ROOT/desktop/mac/install.mjs" undo; fi
   exec "$(node_binary)" "$ROOT/desktop/mac/install.mjs"

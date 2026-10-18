@@ -155,9 +155,12 @@ test('while locked a theme or a new size keeps the same sky; after the lock a re
   const sky = () => p.evaluate(() => { const s = arrival.kept.sky; return {colour: s.stars.material.uniforms.uColor.value.toArray().map(v => +v.toFixed(4)), clear: '#' + s.renderer.getClearColor(new s.stars.material.uniforms.uColor.value.constructor()).getHexString(), width: s.renderer.domElement.width, first: [...s.stars.geometry.attributes.position.array.slice(0, 3)], twist: +s.stars.material.uniforms.uTwist.value.toFixed(6)}; });
   const a = await sky();
   assert.deepEqual([a.colour, a.clear], [[1, 1, 1], '#000000']);
-  // the bars open to it, the panels the theme's at 80%
-  const styles = await p.evaluate(() => ({ panel: getComputedStyle(document.querySelector('.entry-screen')).backgroundImage, body: getComputedStyle(document.body).backgroundColor }));
-  assert.match(styles.panel, /linear-gradient\(rgba\(0, 0, 0, 0\) 72px, (color\(srgb 0 0 0 \/ 0\.8\)|rgba\(0, 0, 0, 0\.8\)) 0px\)/); assert.equal(styles.body, 'rgba(0, 0, 0, 0)');
+  // Main already uses the focus layout's transparent conversation ground.
+  // The older layout keeps its 80%-opaque panel below the open top band.
+  const styles = await p.evaluate(() => ({ focus: document.querySelector('#entry-terminal').classList.contains('focus-layout'), panel: getComputedStyle(document.querySelector('.entry-screen')).backgroundImage, ground: getComputedStyle(document.querySelector('.entry-screen')).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
+  if (styles.focus) { assert.equal(styles.panel, 'none'); assert.equal(styles.ground, 'rgba(0, 0, 0, 0)'); }
+  else assert.match(styles.panel, /linear-gradient\(rgba\(0, 0, 0, 0\) 72px, (color\(srgb 0 0 0 \/ 0\.8\)|rgba\(0, 0, 0, 0\.8\)) 0px\)/);
+  assert.equal(styles.body, 'rgba(0, 0, 0, 0)');
   // a theme: its colours, the same stars and the same twist
   const cinder = themeCss(await testTheme('galaxy-cinder'));
   await p.evaluate(css => new Promise(done => { const link = document.createElement('link'); link.rel = 'stylesheet'; link.id = 'theme-css'; link.href = 'data:text/css,' + encodeURIComponent(css); link.onload = () => requestAnimationFrame(() => done()); document.head.append(link); }), cinder);
@@ -180,26 +183,8 @@ test('while locked a theme or a new size keeps the same sky; after the lock a re
  } finally { await f.close(); }
 });
 
-test('framed by the website, the composer\'s words and cursor push the stars aside, and a keystroke knocks them', async () => {
- const f = await harnessFixture({site:true, viewport:{width:1200,height:800}, themeCSS: await black(), messages:[{role:'assistant',content:'Ready.'}]});
- const p = f.page;
- try {
-  await p.evaluate(async now => { const {mountArrival} = await import('/js/arrival.js'); globalThis.arrival = mountArrival(null, {clock: () => now, framed: () => true}); }, NOW);
-  await p.waitForFunction(() => arrival.kept, null, { timeout: 60000 });
-  await p.click('#entry-input');
-  await p.keyboard.type('one line of words');
-  const a = await p.evaluate(() => { arrival.kept.frame(); const U = arrival.kept.sky.stars.material.uniforms, m = document.querySelector('.entry-caret-mirror').getBoundingClientRect(); return {lines: arrival.kept.avoid.lines, caret: arrival.kept.avoid.caret, kicks: arrival.kept.avoid.kicks.length, count: U.uAvoidCount.value, kick: U.uKick.value[0].w, mirror: [m.left, m.top, m.right, m.bottom]}; });
-  assert.equal(a.count, 1); assert.equal(a.lines.length, 1);
-  const [l, t, r, b] = a.lines[0];
-  assert.ok(l >= a.mirror[0] - 2 && t >= a.mirror[1] - 2 && b <= a.mirror[3] + 2 && r > l + 50, JSON.stringify(a));
-  assert.ok(a.caret && a.caret[2] > 3); assert.ok(a.kicks >= 1); assert.equal(a.kick, 170);
-  assert.deepEqual(f.errors, []);
- } finally { await f.close(); }
-});
-
-// Framed by imperfect.computer (its live product after the film): no lock, but the same sky behind the product from
-// the start, as on Noah's own computer after its lock. Anywhere else unframed, nothing changes.
-test('framed by the launch site: the same kept sky behind the product from the start, the UI whole over it', async () => {
+// The website frame has the product's plain ground, never the lock's sky.
+test('without a native lock the product never loads or paints a galaxy', async () => {
  const f = await harnessFixture({site:true, viewport:{width:1200,height:800}, themeCSS: await black(), messages:[{role:'assistant',content:'Ready.'}]});
  const p = f.page;
  try {
@@ -207,22 +192,22 @@ test('framed by the launch site: the same kept sky behind the product from the s
    const {framedByLaunch} = await import('/js/arrival.js');
    const win = (origin, framed = true) => { const w = {location: {origin}}; w.parent = framed ? {} : w; return w; };
    return {framedByLaunch: [
-    framedByLaunch(win('https://kinso.noah.imperfect.computer'), {referrer: 'https://imperfect.computer/'}),
-    framedByLaunch(win('https://kinso.noah.imperfect.computer', false), {referrer: 'https://imperfect.computer/'}),
-    framedByLaunch(win('https://kinso.noah.imperfect.computer'), {referrer: 'https://evil.example/'}),
+    framedByLaunch(win('https://noah.imperfect.computer'), {referrer: 'https://imperfect.computer/'}),
+    framedByLaunch(win('https://noah.imperfect.computer', false), {referrer: 'https://imperfect.computer/'}),
+    framedByLaunch(win('https://noah.imperfect.computer'), {referrer: 'https://evil.example/'}),
     framedByLaunch(win('http://localhost:5100'), {referrer: 'https://imperfect.computer/'}),
    ]};
   });
   assert.deepEqual(framedByLaunch, [true, false, false, false]);
   let s = await look(p);
   assert.equal(s.sky, 0, 'unframed, no lock: nothing');
-  await p.evaluate(async now => {
+  const handle = await p.evaluate(async () => {
    const {mountArrival} = await import('/js/arrival.js');
-   globalThis.arrival = mountArrival(null, {clock: () => now, framed: () => true});
-  }, NOW);
-  await p.waitForFunction(() => arrival.kept || !document.querySelector('canvas.kept-sky'), null, { timeout: 60000 });
+   return mountArrival(null, {load: () => { throw new Error('must not load a sky'); }});
+  });
+  assert.equal(handle, null);
   s = await look(p);
-  assert.equal(s.sky, 1); assert.match(s.classes, /kept-sky/); assert.doesNotMatch(s.classes, /locked-away/);
+  assert.equal(s.sky, 0); assert.doesNotMatch(s.classes, /kept-sky|locked-away/);
   assert.ok(s.ui.every(o => o === 1), JSON.stringify(s));
  } finally { await f.close(); }
 });

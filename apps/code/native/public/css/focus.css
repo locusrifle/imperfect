@@ -119,7 +119,8 @@ body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-headin
   box-shadow: none;
   -webkit-app-region: no-drag;
 }
-body.imperfect.mac-window #entry-terminal.focus-layout > #session-rail .session-rail-heading { left: 76px; }
+body.imperfect.mac-window #entry-terminal.focus-layout > #session-rail .session-rail-heading,
+html.launch-framed body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-heading { left: 76px; }
 body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-heading > * { height: 32px; min-height: 0; width: auto; }
 /* Flex, not grid: the button's own word (« or », its size 0) would be a
    second grid row and lift the icon off the traffic lights' line. */
@@ -565,7 +566,8 @@ body.imperfect #entry-terminal.focus-layout > :is(#entry-input-zone, .entry-stat
 
 /* ---- the band: its buttons on the traffic lights' line ------------------ */
 /* The traffic lights (main.mjs, trafficLightPosition y 9) centre 17px down: so do these. */
-body.imperfect.mac-window #entry-terminal.focus-layout > #session-rail .session-rail-heading { height: 34px; }
+body.imperfect.mac-window #entry-terminal.focus-layout > #session-rail .session-rail-heading,
+html.launch-framed body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-heading { height: 34px; }
 body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-heading .session-rail-new .session-rail-open { font-size: 0; display: flex; align-items: center; justify-content: center; }
 body.imperfect #entry-terminal.focus-layout > #session-rail .session-rail-heading .session-rail-new .session-rail-open::before {
   content: ''; width: 12px; height: 12px;
@@ -653,7 +655,8 @@ body.imperfect #entry-terminal.focus-layout.choosing::after { display: none; }
 body.imperfect #entry-terminal.focus-layout:is(.focus-full-middle, .focus-full-panel) { --focus-rail-w: 0px; }
 body.imperfect #entry-terminal.focus-layout:is(.focus-full-middle, .focus-full-panel) > :is(#session-rail, .screen-status) { display: none; }
 body.imperfect #entry-terminal.focus-full-panel .canvas-strip > .wm-window.wm-in-panel { border-radius: 0; background: var(--surface-card); }
-body.imperfect.mac-window #entry-terminal.focus-full-panel .wm-in-panel :is(.browser-controls, .workbench-bar) { padding-left: 76px; }
+body.imperfect.mac-window #entry-terminal.focus-full-panel .wm-in-panel :is(.browser-controls, .workbench-bar),
+html.launch-framed body.imperfect #entry-terminal.focus-full-panel .wm-in-panel :is(.browser-controls, .workbench-bar) { padding-left: 76px; }
 /* and a website in it, square with it, gives up the corners it rounds on the card */
 body.imperfect #entry-terminal.focus-full-panel .wm-in-panel .browser-page > :is(webview, iframe) { border-radius: 0; clip-path: none; }
 /* A picker opened from the bar (the model's) floats over the panel, though
@@ -690,7 +693,8 @@ body.imperfect #entry-terminal.focus-full-panel.dock-shown > .focus-dock-reach {
    the middle (Noah), between the sidebar and the panel beside it, in the
    band above the conversation's first words. */
 body.imperfect #entry-terminal.focus-layout > .screen-status { display: flex; }
-body.imperfect.mac-window #entry-terminal.focus-layout > .screen-status { display: none; }
+body.imperfect.mac-window #entry-terminal.focus-layout > .screen-status,
+html.launch-framed body.imperfect #entry-terminal.focus-layout > .screen-status { display: none; }
 body.imperfect #entry-terminal.focus-layout > .screen-status {
   left: calc(var(--focus-rail-w) + (100% - var(--focus-rail-w) - var(--focus-panel-column, 0px)) / 2);
   top: 9px; transform: translateX(-50%);

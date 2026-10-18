@@ -73,11 +73,12 @@
 import { MOD, heldMod } from './pi-card.js';
 import { windowClose } from './window-close.js';
 import { initialLayout, LAYOUT_CHOICE, LAYOUTS } from './layout-choice.js';
+import { framedByLaunch, phoneByLaunch } from './arrival.js';
 
 const RULE = 1;
 // The one test of a phone, for the whole page: a finger is the pointer.
 const PHONE = '(pointer: coarse)';
-export const phone = () => matchMedia(PHONE).matches;
+export const phone = () => phoneByLaunch() || (!framedByLaunch() && matchMedia(PHONE).matches);
 // Dwindle cuts a space the other way rather than leave a window narrower or
 // shorter than this, when the other way can.
 const MIN_WIDTH = 480, MIN_HEIGHT = 240;

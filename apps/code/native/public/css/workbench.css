@@ -249,13 +249,13 @@ body.imperfect .workbench-bar > button:is([data-edit], [data-download]) { width:
 }
 /* a finger: tabs, their close and + at a thumb's width */
 @media (pointer: coarse) {
-  .workbench-bar { --bar-height: var(--frame-bar-height, 45px); }
-  body.imperfect .workbench-bar { --workbench-row: 44px; gap: 6px; }
-  body.imperfect .workbench-bar > button { width: 44px; }
-  .workbench .workbench-device { min-height: 44px; }
-  .workbench .workbench-tab-close { width: 44px; }
-  .workbench .workbench-menu button { min-height: 44px; }
+  :where(html:not(.launch-framed)) .workbench-bar { --bar-height: var(--frame-bar-height, 45px); }
+  :where(html:not(.launch-framed)) body.imperfect .workbench-bar { --workbench-row: 44px; gap: 6px; }
+  :where(html:not(.launch-framed)) body.imperfect .workbench-bar > button { width: 44px; }
+  :where(html:not(.launch-framed)) .workbench .workbench-device { min-height: 44px; }
+  :where(html:not(.launch-framed)) .workbench .workbench-tab-close { width: 44px; }
+  :where(html:not(.launch-framed)) .workbench .workbench-menu button { min-height: 44px; }
   /* 16px: a phone keeps its scale as the keyboard comes up */
-  .workbench-editor { padding: 14px 16px 48px; font-size: 16px; line-height: 1.55; }
-  .workbench .workbench-view-line button { min-height: 36px; }
+  :where(html:not(.launch-framed)) .workbench-editor { padding: 14px 16px 48px; font-size: 16px; line-height: 1.55; }
+  :where(html:not(.launch-framed)) .workbench .workbench-view-line button { min-height: 36px; }
 }

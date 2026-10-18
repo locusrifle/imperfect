@@ -269,6 +269,14 @@ export function mountLive({ full = () => {}, connect = SOCKET, tab = null, brows
     if (!field.mirror) resetBuffer();
   };
   const bindKeyboard = () => {
+    // Ordinary fields mirror real text: native copy/cut and paste work there.
+    // A private/rich field holds only a sentinel, not a remote selection.
+    // Never put that implementation marker on the person's clipboard.
+    for (const type of ['copy', 'cut']) text.addEventListener(type, event => {
+      if (field?.mirror) return;
+      event.preventDefault();
+      say('Copy and cut are available only in plain-text fields in this stream.');
+    });
     text.addEventListener('compositionstart', () => { composing = true; anchor = { start: text.selectionStart, end: text.selectionEnd }; });
     text.addEventListener('compositionend', () => { composing = false; changedText(); });
     text.addEventListener('input', () => { if (!composing) changedText(); });

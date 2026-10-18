@@ -80,7 +80,30 @@ body.imperfect .usage-window-name { color: var(--label-2); overflow-wrap: anywhe
 body.imperfect .usage-percent { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 body.imperfect .usage-bar { position: relative; display: block; min-width: 0; height: 18px; }
 body.imperfect .usage-track { position: absolute; inset: 6px 0; border-radius: var(--radius-xs); background: var(--fill-2); overflow: hidden; }
-body.imperfect .usage-fill { display: block; height: 100%; border-radius: var(--radius-xs); background: var(--tint); }
+body.imperfect .usage-fill { display: block; position: relative; height: 100%; border-radius: var(--radius-xs); background: var(--tint); }
+/* The level flows away, without changing the normal / pace / low colours.
+   Kept inside the fill, so the unspent track never looks active. */
+body.imperfect :is(.usage-fill, .usage-row-fill) { overflow: hidden; transition: width 600ms cubic-bezier(.2, .65, .3, 1); }
+body.imperfect [data-draining="false"] :is(.usage-fill, .usage-row-fill) { transition: none; }
+@starting-style { body.imperfect .usage-fill { width: var(--usage-previous) !important; } }
+body.imperfect [data-draining="true"] :is(.usage-fill, .usage-row-fill)::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 15%, color-mix(in srgb, var(--surface) 48%, transparent) 50%, transparent 85%);
+  animation: usage-drain 1.6s linear infinite; pointer-events: none;
+}
+@keyframes usage-drain { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+/* A low allowance's fill is too short for the band to show, so it breathes as well. */
+body.imperfect .usage-row[data-draining="true"][data-low="true"] .usage-row-fill { animation: usage-drain-breathe 1.6s ease-in-out infinite; }
+body.imperfect .usage-ring[data-draining="true"] .usage-ring-arc { animation: usage-drain-breathe 1.6s ease-in-out infinite; }
+@keyframes usage-drain-breathe { 50% { opacity: .6; } }
+@media (prefers-reduced-motion: reduce) {
+  body.imperfect :is(.usage-fill, .usage-row-fill) { transition: none; }
+  body.imperfect [data-draining="true"] :is(.usage-fill, .usage-row-fill)::after {
+    animation: none; transform: none; inset: 0 0 0 auto; width: 2px; background: var(--surface); opacity: .9;
+  }
+  body.imperfect .usage-row[data-draining="true"][data-low="true"] .usage-row-fill { animation: none; }
+  body.imperfect .usage-ring[data-draining="true"] .usage-ring-arc { animation: none; opacity: .7; }
+}
 body.imperfect .usage-time-mark { position: absolute; top: 3px; bottom: 3px; width: 1.5px; border-radius: var(--radius-xs); background: var(--label-2); transform: translateX(-50%); }
 body.imperfect .usage-reset { color: var(--label-3); font-size: var(--text-s); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Under a limit: whether spending is on pace, in words; orange when it

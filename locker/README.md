@@ -1,11 +1,10 @@
 # locker
 
 The store for the imperfect repo: one loopback server with no dependencies,
-behind the Cloudflare tunnel on the PC. Until 15 Oct 2026 it sold lifetime
-access for one price; since then the code is free on GitHub
-(github.com/locusrifle/imperfect), and `/buy` links there. Members who bought
-hold a key, and the sentence to paste into their agent clones their copy with
-it as the password; their agent follows `AGENTS.md`. Settings are listed at the top of `start.mjs`, operator
+behind the Cloudflare tunnel on the PC. The desktop's Shop offers US$40/month
+rental and pay-what-you-want support for the free GitHub source, from US$1.
+Legacy keyed members keep their repository access and updates.
+Settings are listed at the top of `start.mjs`, operator
 commands at the top of each `tools/*.mjs`. Secrets live in
 `~/.imperfect/credentials/`, never here.
 
@@ -46,9 +45,8 @@ rechecks entitlement and disables caching, including ranges and HEAD.
 
 Seller: **Noah**, not GST registered. No tax collection or GST line. Bring your
 own supported AI subscription; AI usage, hardware and backups are not included.
-The legacy `/buy` USD 150 checkout (POST /buy) stays for existing members and
-is not offered: nothing links to it since 15 Oct 2026, when the code became free
-on GitHub.
+GET `/buy` and `/rent.html` redirect home; POST `/buy` is retired. Legacy
+`/thanks` and code webhooks remain for in-flight purchases and existing keyed members.
 
 Set these in the private `locker.env` (also documented atop `start.mjs`):
 
@@ -58,13 +56,13 @@ Set these in the private `locker.env` (also documented atop `start.mjs`):
 | STRIPE_WEBHOOK_SECRET | signing secret for `/webhooks/stripe` |
 | STRIPE_RENT_PRICE | US$40/month recurring price |
 | STRIPE_OS_PRICE | AUD 400 one-time lifetime price |
-| STRIPE_PRICE | existing legacy USD 150 one-time price |
 | RENT_GRACE_DAYS | integer 1–365, default 7 days unpaid before stop intent |
 | RENT_RETENTION_DAYS | integer 1–365, default 30 days **after stop** |
 
-Each new offer needs the key, webhook secret and its own price. Missing any
-leaves the current `/host.html` or `/rent.html` holding copy; testers still work
-without Stripe. `/host.html` becomes a no-JS form to `/os/buy`. OS buyers need
+Rental and OS offers need the key, webhook secret and their own price. Missing
+any leaves those checkouts closed; testers still work without Stripe.
+Source support uses custom USD amounts (US$1–10000) and needs only the Stripe key;
+it grants no private entitlement. Its install command points to the free public repo. `/host.html` becomes a no-JS form to `/os/buy`. OS buyers need
 no account; a signed-in purchase is linked explicitly using the account UUID,
 not the checkout email. `/os/thanks` shows its product-tagged key and leads to
 `/os/install`. The bootable installer download is **not published here yet**;
@@ -162,9 +160,7 @@ when those promises are ready.
 
 **Stripe.** One product, *the imperfect repo*, tax code `txcd_10202001`
 (downloadable software, non-recreational), with a one-time price of $150 USD,
-tax-inclusive, so every buyer pays $150 whatever their tax. Legacy: the code
-has been free on GitHub since 15 Oct 2026, so this price is no longer offered;
-it stays so existing purchases are unaffected. The store sells
+tax-inclusive, so every buyer pays $150 whatever their tax. The store sells
 as Locus (Managed Payments off) and collects no tax until Stripe Tax is
 registered and `automatic_tax` is turned on. The key is a restricted one
 (`rk_live_…`) with Checkout Sessions write and nothing else. The webhook is

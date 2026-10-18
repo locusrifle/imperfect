@@ -678,7 +678,7 @@ export async function createGueyServer(options = {}) {
     // The computer the others follow is marked home: a new session starts
     // there unless the person picks another (harness.js).
     if (path === '/machines.json' && req.method === 'GET') {
-      sendJson(res, 200, { authority: authority.id || '', machines: (await machines.list()).map(machine => ({ ...machine, home: authority.id ? machine.id === authority.id : hosted && Boolean(machine.self) })) });
+      sendJson(res, 200, { authority: authority.id || '', machines: (await machines.list()).map(machine => ({ ...machine, ...(machine.self ? { hosted } : {}), home: authority.id ? machine.id === authority.id : hosted && Boolean(machine.self) })) });
       return;
     }
     if (path === '/pulse.json' && req.method === 'GET') {
@@ -766,6 +766,7 @@ export async function createGueyServer(options = {}) {
         ui: 'native-gui',
         protocol: MACHINE_PROTOCOL,
         capabilities: MACHINE_CAPABILITIES,
+        hosted,
         owner: await machines.selfId(),
         machine: await machines.self(),
         pid: process.pid,

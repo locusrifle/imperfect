@@ -4,6 +4,8 @@ node_modules/
 *.bak*
 *.log
 .test-artifacts/
+# What Finder leaves in each folder it opens, on a Mac.
+.DS_Store
 
 # Native and generated build outputs.
 phone/.gradle/

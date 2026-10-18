@@ -17,8 +17,8 @@ html[data-face] body.imperfect .code-face {
    the focus they take away closes the keyboard again. One declaration, on the
    element the wrap writes to, and the whole document inherits it. */
 html:has(body.imperfect) {
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: var(--phone-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--phone-bottom, env(safe-area-inset-bottom, 0px));
 }
 html:has(body.imperfect),
 body.imperfect {
@@ -62,8 +62,8 @@ body.imperfect .entry-attach {
 }
 /* A finger needs more than a line box to land on. */
 @media (pointer: coarse) {
-  body.imperfect .entry-attach { min-width: 32px; min-height: 32px; height: auto; padding: 0; }
-  body.imperfect .entry-input-stack { align-items: center; }
+  :where(html:not(.launch-framed)) body.imperfect .entry-attach { min-width: 32px; min-height: 32px; height: auto; padding: 0; }
+  :where(html:not(.launch-framed)) body.imperfect .entry-input-stack { align-items: center; }
 }
 /* The composer, under a rule of the accent. */
 body.imperfect #entry-input-zone {
@@ -663,6 +663,143 @@ body.imperfect .system-slider::-webkit-slider-runnable-track { height: 4px; back
 body.imperfect .system-slider::-webkit-slider-thumb { appearance: none; width: 8px; height: 16px; margin-top: -6px; border: 0; border-radius: 0; background: var(--label-bright); }
 body.imperfect .system-line { margin: 0; padding: 4px 12px 8px; color: var(--label-2); overflow-wrap: anywhere; }
 body.imperfect .system-line.error { color: var(--theme-red, var(--danger)); }
+/* This computer's menu: the shared Mac shapes and surfaces, not the older
+   clipboard/screenshot panels that happen to share screen-panel helpers. */
+body.imperfect .system-panel {
+  padding: 6px; border: 0.5px solid var(--sep-strong); border-radius: var(--radius-l);
+  background: var(--surface-pop); box-shadow: var(--shadow-pop);
+  font-size: var(--text); line-height: 18px;
+}
+body.imperfect .system-panel.full { border-left: 0; border-right: 0; border-radius: 0 0 var(--radius-l) var(--radius-l); }
+body.imperfect .system-panel .system-section { padding: 8px 6px; }
+body.imperfect .system-panel .system-head { min-height: 32px; padding: 0 6px 4px; }
+body.imperfect .system-panel .system-head h2 { flex: 1; color: var(--label); font-weight: 600; }
+body.imperfect .system-panel .system-wifi .system-head { min-height: 36px; gap: 6px; }
+body.imperfect .system-panel .system-wifi h2 { font-size: var(--text-l); }
+body.imperfect .system-panel button.system-action,
+body.imperfect .system-panel button.system-toggle {
+  min-height: 28px; border: 0.5px solid var(--sep-strong); border-radius: var(--radius-s);
+  background: var(--fill); padding: 3px 10px;
+}
+body.imperfect .system-panel button.system-toggle[aria-pressed="true"],
+body.imperfect .system-panel button.system-primary { background: var(--tint); border-color: transparent; color: var(--on-tint); }
+body.imperfect .system-panel button.system-danger { color: var(--danger); }
+body.imperfect .system-panel button.system-action:hover { background: var(--fill-2); }
+body.imperfect .system-panel button.system-primary:hover { background: var(--tint); filter: brightness(1.08); }
+body.imperfect .system-panel :is(button, input, select):focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+body.imperfect .system-panel button:disabled { cursor: default; opacity: 0.45; }
+/* A button supplies Space/Enter and focus; the inset track supplies the
+   switch's shape independently of its comfortably sized hit area. */
+body.imperfect .system-panel button.system-switch {
+  flex: none; display: grid; place-items: center; width: 40px; min-height: 32px;
+  padding: 0; border: 0; border-radius: var(--radius-s); background: none; cursor: pointer;
+}
+body.imperfect .system-switch-track {
+  display: block; width: 32px; height: 20px; padding: 2px; box-sizing: border-box;
+  border-radius: var(--radius-pill); background: var(--fill-2); box-shadow: inset 0 0 0 0.5px var(--sep-strong);
+}
+body.imperfect .system-switch-track::after {
+  content: ''; display: block; width: 16px; height: 16px; border-radius: var(--radius-pill);
+  background: var(--on-tint); box-shadow: 0 1px 2px var(--sep-strong); transition: transform 140ms ease;
+}
+body.imperfect .system-switch[aria-checked="true"] .system-switch-track { background: var(--tint); }
+body.imperfect .system-switch[aria-checked="true"] .system-switch-track::after { transform: translateX(12px); }
+body.imperfect .system-scanning { display: flex; align-items: center; gap: 5px; color: var(--label-2); font-size: var(--text-s); white-space: nowrap; }
+body.imperfect .system-spinner {
+  box-sizing: border-box; width: 11px; height: 11px; border: 1.5px solid var(--sep-strong);
+  border-top-color: var(--label-2); border-radius: var(--radius-pill); animation: system-spin 800ms linear infinite;
+}
+@keyframes system-spin { to { transform: rotate(360deg); } }
+body.imperfect .system-panel button.system-refresh,
+body.imperfect .system-panel button.system-network-options {
+  flex: none; display: grid; place-items: center; width: 28px; min-height: 28px; padding: 0;
+  border: 0; border-radius: var(--radius-s); background: none; color: var(--label-2); font: 18px/1 var(--ui); cursor: pointer;
+}
+body.imperfect .system-panel button.system-refresh:hover,
+body.imperfect .system-panel button.system-network-options:hover,
+body.imperfect .system-panel button.system-network-options[aria-expanded="true"] { background: var(--fill-2); color: var(--label); }
+body.imperfect .system-network-heading { margin: 10px 8px 4px; color: var(--label-2); font-size: var(--text-s); line-height: 16px; font-weight: 600; }
+body.imperfect .system-network-group + .system-network-group { margin-top: 4px; padding-top: 2px; border-top: 0.5px solid var(--sep); }
+body.imperfect .system-wifi .system-item { gap: 0; padding-right: 4px; border-radius: var(--radius-s); }
+body.imperfect .system-wifi .system-item:not(:has(.system-network-options))::after { content: ''; flex: none; width: 28px; }
+body.imperfect .system-wifi .system-item:has(:is(:hover, :focus-visible)) { background: var(--fill-2); }
+body.imperfect .system-wifi .system-item .system-name { gap: 9px; min-height: 38px; padding: 4px 8px; border-radius: var(--radius-s); }
+body.imperfect .system-wifi .system-item.active .system-name { min-height: 48px; }
+body.imperfect .system-signal { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-pill); }
+body.imperfect .system-signal .system-wifi-icon { width: 18px; height: 14px; }
+body.imperfect .system-item.active .system-signal { background: var(--tint); color: var(--on-tint); }
+body.imperfect .system-wifi .system-label { display: flex; flex-direction: column; }
+body.imperfect .system-ssid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.imperfect .system-item.active .system-ssid { font-weight: 500; }
+body.imperfect .system-wifi .system-note { font-size: var(--text-s); line-height: 15px; }
+body.imperfect .system-lock { margin: 0 4px 0 8px; color: var(--label-2); }
+body.imperfect .system-network-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 6px 8px 10px 47px; }
+body.imperfect .system-forget-note { flex: 0 0 100%; margin: 0 0 4px; color: var(--label-2); font-size: 12px; overflow-wrap: anywhere; }
+body.imperfect .system-panel .system-join { gap: 6px; padding: 6px 8px 10px 47px; }
+body.imperfect .system-panel :is(.system-password, .system-select) {
+  height: 28px; padding: 3px 8px; border-color: var(--sep-strong); border-radius: var(--radius-s); background: var(--fill);
+}
+body.imperfect .system-panel .system-password::placeholder { color: var(--label-2); opacity: 1; }
+body.imperfect .system-wifi-message { margin: 6px 8px 8px; color: var(--label-2); font-size: 12px; }
+/* The other modules use the Wi-Fi menu's content insets and icon column. */
+body.imperfect .system-panel .system-section:not(.system-wifi) .system-head { min-height: 36px; gap: 6px; }
+body.imperfect .system-panel .system-section:not(.system-wifi) .system-head h2 { font-size: var(--text-l); }
+body.imperfect .system-panel .system-section:not(.system-wifi) > .system-row { gap: 9px; padding: 4px 8px; min-height: 40px; }
+body.imperfect .system-panel .system-control-glyph,
+body.imperfect .system-panel button.system-glyph-button {
+  flex: none; display: grid; place-items: center; width: 30px; min-height: 32px;
+  padding: 0; border: 0; border-radius: var(--radius-s); background: none; color: var(--label);
+}
+body.imperfect .system-panel button.system-glyph-button { cursor: pointer; }
+body.imperfect .system-panel button.system-glyph-button:hover { background: var(--fill-2); }
+body.imperfect .system-panel button.system-glyph-button[aria-pressed="true"] { color: var(--label-2); }
+body.imperfect .system-panel :is(.system-glyph-button, .system-control-glyph, .system-bluetooth .system-signal) > svg:not(.system-battery-icon) { width: 20px; height: 20px; }
+body.imperfect .system-panel .system-slider { height: 32px; }
+body.imperfect .system-panel .system-slider::-webkit-slider-runnable-track {
+  height: 8px; border-radius: var(--radius-pill);
+  background: linear-gradient(to right, var(--tint) 0 var(--slider-fill), var(--fill-2) var(--slider-fill) 100%);
+}
+body.imperfect .system-panel .system-slider::-webkit-slider-thumb {
+  width: 16px; height: 16px; margin-top: -4px; border-radius: var(--radius-pill);
+  background: var(--on-tint); box-shadow: 0 1px 3px var(--scrim), 0 0 0 0.5px var(--sep);
+}
+body.imperfect .system-panel .system-section > .system-row.system-device-chooser { padding-left: 47px; }
+body.imperfect .system-panel .system-section.system-battery { display: block; }
+body.imperfect .system-battery-detail { white-space: normal; font-size: 12px; }
+body.imperfect .system-power-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 4px 8px; }
+body.imperfect .system-panel .system-power-choices .system-action { min-height: 32px; }
+body.imperfect .system-power-confirm { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; padding: 4px 8px; }
+body.imperfect .system-confirm-question { flex: 0 0 100%; margin: 0 0 4px; color: var(--label); }
+body.imperfect .system-bluetooth .system-item { gap: 0; padding-right: 4px; border-radius: var(--radius-s); }
+body.imperfect .system-bluetooth .system-item:is(:hover, :focus-within) { background: var(--fill-2); }
+body.imperfect .system-bluetooth .system-item .system-name { padding: 4px 8px; gap: 9px; min-height: 48px; }
+body.imperfect .system-bluetooth .system-label { display: flex; flex-direction: column; }
+body.imperfect .system-bluetooth .system-note { font-size: var(--text-s); line-height: 15px; }
+body.imperfect .system-device-actions { display: flex; justify-content: flex-end; gap: 6px; padding: 6px 8px 10px 47px; }
+body.imperfect .system-device-message { margin: 6px 8px; color: var(--label-2); font-size: 12px; }
+@media (pointer: coarse), (max-width: 500px) {
+  body.imperfect .system-panel button.system-glyph-button { min-width: 44px; min-height: 44px; margin-inline: -7px; }
+  body.imperfect .system-panel .system-slider { height: 44px; }
+}
+body.imperfect .system-panel .system-line {
+  position: sticky; bottom: 0; flex: none; padding: 8px 12px;
+  border-top: 0.5px solid var(--sep); border-radius: var(--radius-s);
+  background: var(--surface-pop); box-shadow: 0 -4px 12px var(--surface-pop);
+}
+@media (pointer: coarse), (max-width: 500px) {
+  body.imperfect .screen-panel.system-panel button.system-action,
+  body.imperfect .screen-panel.system-panel button.system-toggle,
+  body.imperfect .screen-panel.system-panel button.system-switch,
+  body.imperfect .screen-panel.system-panel button.system-refresh,
+  body.imperfect .screen-panel.system-panel button.system-network-options { min-width: 44px; min-height: 44px; }
+  body.imperfect .system-panel .system-wifi .system-name { min-height: 44px; }
+  body.imperfect .system-wifi .system-item:not(:has(.system-network-options))::after { width: 44px; }
+  body.imperfect .system-panel :is(.system-password, .system-select) { height: 44px; font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.imperfect .system-switch-track::after { transition: none; }
+  body.imperfect .system-spinner { animation: none; }
+}
 /* What was copied (Mod+V) and a screenshot just taken: the system panel's
    frame, under the same group (clipboard-history.js, screenshot-preview.js). */
 body.imperfect .clip-section { padding-bottom: 4px; }
@@ -684,8 +821,8 @@ body.imperfect .shot-image { display: block; width: 100%; max-height: 240px; obj
 body.imperfect .shot-actions { padding: 4px 12px; flex-wrap: wrap; }
 body.imperfect .shot-actions .system-label { flex: 0 0 100%; }
 @media (pointer: coarse) {
-  body.imperfect .system-item, body.imperfect .system-row { min-height: 44px; }
-  body.imperfect .screen-panel button.system-action, body.imperfect .screen-panel button.system-toggle { min-height: 36px; }
+  :where(html:not(.launch-framed)) body.imperfect .system-item, :where(html:not(.launch-framed)) body.imperfect .system-row { min-height: 44px; }
+  :where(html:not(.launch-framed)) body.imperfect .screen-panel button.system-action, :where(html:not(.launch-framed)) body.imperfect .screen-panel button.system-toggle { min-height: 36px; }
 }
 /* New session follows the tabs; the fold stays at the far edge. */
 body.imperfect #entry-terminal > #session-rail.collapsed .session-rail-heading {
@@ -818,19 +955,19 @@ body.imperfect #entry-terminal .session-rail-fold:focus-visible {
    them (above). The strip is marks alone, and
    every control is thumb-sized. */
 @media (pointer: coarse) {
-  html:has(body.imperfect),
-  body.imperfect { background: var(--surface-bg); }
-  body.imperfect .code-face:not([hidden]) { animation: none; }
-  body.imperfect #entry-terminal > #session-rail.collapsed .session-rail-asked { display: none; }
-  body.imperfect #entry-terminal > #session-rail { --rail-tab-height: 44px; }
-  body.imperfect #entry-terminal > #entry-dialog.input-dialog { font-size: .85rem; }
-  body.imperfect #entry-terminal .session-rail-open,
-  body.imperfect #entry-terminal .session-rail-fold,
-  body.imperfect #entry-terminal .session-rail-theme { min-width: 44px; min-height: 44px; }
+  html:where(:not(.launch-framed)):has(body.imperfect),
+  :where(html:not(.launch-framed)) body.imperfect { background: var(--surface-bg); }
+  :where(html:not(.launch-framed)) body.imperfect .code-face:not([hidden]) { animation: none; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal > #session-rail.collapsed .session-rail-asked { display: none; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal > #session-rail { --rail-tab-height: 44px; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal > #entry-dialog.input-dialog { font-size: .85rem; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal .session-rail-open,
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal .session-rail-fold,
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal .session-rail-theme { min-width: 44px; min-height: 44px; }
   /* A row swiped away: upwards off the strip, sideways out of the list. The
      other direction still scrolls. */
-  body.imperfect #entry-terminal > #session-rail.collapsed .session-rail-item { touch-action: pan-x; }
-  body.imperfect #entry-terminal > #session-rail:not(.collapsed) .session-rail-item { touch-action: pan-y; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal > #session-rail.collapsed .session-rail-item { touch-action: pan-x; }
+  :where(html:not(.launch-framed)) body.imperfect #entry-terminal > #session-rail:not(.collapsed) .session-rail-item { touch-action: pan-y; }
 }
 body.imperfect #entry-terminal .session-rail-item.active .session-rail-agent {
   color: var(--label);
@@ -921,6 +1058,7 @@ body.imperfect .entry-pending[hidden] { display: none; }
 body.imperfect #entry-terminal.choosing #entry-input-zone,
 body.imperfect #entry-terminal.choosing .entry-status { display: none; }
 body.imperfect .agent-choose {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -966,9 +1104,9 @@ body.imperfect .agent-choose-option:disabled { opacity: 0.4; }
 body.imperfect .agent-choose-harness > svg { width: 30px; height: 30px; }
 body.imperfect .agent-choose-unready { color: var(--label-2); }
 body.imperfect .agent-choose-unready > svg { opacity: 0.45; }
-body.imperfect .agent-choose-hint { margin: 0; color: var(--label-3); font-size: var(--text-s); }
 /* With a keyboard, Esc cancels; the button is for a touch screen, which has none. */
 @media not (pointer: coarse) { body.imperfect .agent-choose-cancel { display: none; } }
+html:is(.launch-framed, .launch-phone) body.imperfect .agent-choose-cancel { display: none; }
 .agent-choose-error { color: var(--danger); }
 
 /* ---- the keys -----------------------------------------------------------
@@ -1139,7 +1277,23 @@ body.imperfect .entry-input-stack > .entry-line-status:empty { display: none; }
    it must not move. With the keyboard up, a swipe used to scroll that page
    and open empty space under the input bar. */
 @media (pointer: coarse) {
-  html:has(> body.code-open),
-  body.code-open { overflow: hidden; overscroll-behavior: none; }
+  html:where(:not(.launch-framed)):has(> body.code-open),
+  :where(html:not(.launch-framed)) body.code-open { overflow: hidden; overscroll-behavior: none; }
 }
 body.imperfect .picker-name { margin: 0; padding: 4px 12px; border-radius: var(--radius-pill); background: var(--surface-pop); box-shadow: var(--shadow-pop); color: var(--label); font: 600 var(--text)/1.3 var(--ui); }
+
+/* The launch frame uses this product's own chooser and panes. Its plain
+   ground is unchanged; only the pieces not dropped yet are out of sight. */
+/* The inert phone demonstration leaves the device status/gesture areas clear. */
+/* Its own notch and home bar, through the one declaration above (and still
+   under whatever a wrap writes on the element itself). */
+html.launch-phone:has(body.imperfect) { --phone-top: 54px; --phone-bottom: 26px; }
+body.imperfect .agent-choose-computers { margin-bottom: 22px; }
+body.imperfect .agent-choose-machine { margin: -10px 0 22px; max-width: 100%; padding: 6px 10px; font: inherit; color: var(--label); background: var(--surface-card); border: 1px solid var(--sep); border-radius: 0; }
+html:is([data-assembly-step="bare"], [data-assembly-step="claude"], [data-assembly-step="codex"]) body.imperfect #entry-terminal.focus-layout { --focus-rail-w: 0px; --focus-panel-column: 0px !important; }
+html:is([data-assembly-step="bare"], [data-assembly-step="claude"], [data-assembly-step="codex"]) #session-rail,
+html:is([data-assembly-step="bare"], [data-assembly-step="claude"], [data-assembly-step="codex"]) .canvas-strip > :not(.entry-screen) { visibility: hidden !important; pointer-events: none; }
+html:is([data-assembly-step="bare"], [data-assembly-step="claude"], [data-assembly-step="codex"]) .canvas-strip > .entry-screen { width: 100% !important; }
+html[data-assembly-step]:not([data-assembly-step="done"]) .agent-choose-harness.assembly-pop { animation: assembly-pop 200ms ease-out both; }
+@keyframes assembly-pop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { html[data-assembly-step] .assembly-pop { animation: none !important; } }

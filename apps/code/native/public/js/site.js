@@ -2,6 +2,7 @@ import { grid, bindHarnessKeys, registerKeyBinding, activeKeyBindings, MOD } fro
 import { mountGueyPi } from './harness.js';
 import { mountArrival } from './arrival.js';
 import { notifyDemoReady } from './demo-ready.js';
+import { mountLaunchDrag } from './assembly.js';
 import { turn } from './turn.js';
 
 const byId = id => document.getElementById(id);
@@ -99,6 +100,7 @@ const harness = mountGueyPi({
 
 // imperfect OS's lock: only the sky while it holds, the rest in over it as the sky goes.
 mountArrival();
+mountLaunchDrag();
 void notifyDemoReady(harness.ready);
 
 // The rail is always there; this key hands the keyboard to it and back.

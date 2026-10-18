@@ -1,5 +1,5 @@
 // The clipboard's history (system/clipboard.mjs), for this computer's own
-// screen: Super+V (Alt+V in a browser) opens what was copied, newest first,
+// screen: Super+Shift+V (Alt+V in a browser) opens what was copied, newest first,
 // text and pictures, hung under the screen's status group as the system panel
 // is. Picking one puts it back on the clipboard, and into the input bar when
 // the keys were there. Each can be deleted, or all at once. On a computer that

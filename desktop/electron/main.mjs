@@ -5,6 +5,7 @@
 // canvas), signed in with the window's own cookies.
 import { app, BrowserWindow, Menu, nativeTheme, session, ipcMain, powerMonitor } from 'electron';
 import { installNativeClose, nativeCloseKey } from './close.mjs';
+import { installEditing } from './edit.mjs';
 import { createDownloads } from './downloads.mjs';
 import { angleBackend } from './gpu.mjs';
 import { installWebsitePopups, websiteAddress } from './popups.mjs';
@@ -31,6 +32,8 @@ const ALT_ALIAS = altAlias();
 ipcMain.on('alt-alias', event => { event.returnValue = ALT_ALIAS; });
 // Super, or Option on a Mac, where Cmd is the Mac's own (keys.mjs).
 const MOD = deskModifier();
+// Before any contents exists, including websites and native popup windows.
+installEditing(app, { mod: MOD });
 ipcMain.on('desk-mod', event => { event.returnValue = MOD; });
 const origin = `http://127.0.0.1:${port}`;
 

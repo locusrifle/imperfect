@@ -8,7 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 // optional art's dependencies, including references outside the front page.
 const SITE = resolve(import.meta.dirname, '../../website');
 const PUBLIC = resolve(import.meta.dirname, '../public');
-const ROUTES = new Set(['/account', '/buy']);
+const ROUTES = new Set(['/account']);
 const exists = file => access(file).then(() => true, () => false);
 const page = name => readFile(join(SITE, name), 'utf8');
 const words = html => html.replace(/<[^>]*>/g, ' ').replace(/&(?:nbsp|amp);/g, ' ').replace(/\s+/g, ' ').trim();
@@ -35,7 +35,7 @@ async function localReference(from, ref, names, fragments) {
   const [path, fragment] = ref.split('#');
   let pathname = decodeURIComponent(path.split('?')[0]);
   if (pathname.endsWith('/')) pathname += 'index.html';
-  if (ROUTES.has(pathname)) return; // sibling account service and explicitly legacy store
+  if (ROUTES.has(pathname)) return; // sibling account service
   let target = pathname ? resolve(pathname.startsWith('/') ? SITE : dirname(from), pathname.replace(/^\//, '')) : from;
   // Icons are served by the existing store, not copied into the website.
   if (pathname.startsWith('/') && !await exists(target) && await exists(join(PUBLIC, 'store', pathname))) target = join(PUBLIC, 'store', pathname);
@@ -63,6 +63,7 @@ test('all HTML, CSS and local module references resolve, including page fragment
       const refs = [
         ...text.matchAll(/^\s*(?:import|export)\b[^'"\n]*?from\s+['"](\.{1,2}\/[^'"]+)['"]/gm),
         ...text.matchAll(/^\s*import\s+['"](\.{1,2}\/[^'"]+)['"]/gm),
+        ...text.matchAll(/^\s*(?:import|export)\b[^'"\n]*?from\s+['"](\/(?!\/)[^'"]+)['"]/gm),
         ...text.matchAll(/import\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g),
         ...text.matchAll(/new URL\(['"](\.{0,2}\/?[^'":]+)['"], import\.meta\.url\)/g),
       ].map(match => match[1]);
@@ -91,9 +92,8 @@ test('the front stages the lock, galaxy, transparent launch film and the real No
   // The Mac the film ends on is under the sky and the film, ready but unseen until the film's frame goes up.
   assert.match(html, /<section id="macScreen" class="screen mac" data-visible="false"[^>]*aria-hidden="true" inert hidden>/);
   assert.ok(html.indexOf('id="macScreen"') < html.indexOf('id="curtain"') && html.indexOf('id="curtain"') < html.indexOf('id="introScreen"'));
-  const app = attrs(html.match(/<iframe title="Your own app"[^>]*>/)[0]);
-  assert.match(app['data-src'], /^mac\/app\.html(?:\?v=[\w-]+)?$/, 'its window is the site\'s own static page');
-  assert.ok(!app.src && !app.srcdoc, 'loaded only once the film plays');
+  assert.equal([...html.matchAll(/<iframe\b/g)].length, 2, 'the ticketed desktop and authenticated inert phone are the only product documents');
+  assert.doesNotMatch(html, /mac\/app(?:\.html|\/)|browser-page\.webp|srcdoc=/, 'no static product or browser imitation');
   assert.match(html, /<video id="film"[^>]*playsinline[^>]*aria-label="imperfect launch film"/);
   assert.match(html, /<canvas id="filmCanvas" aria-hidden="true"><\/canvas>/);
   const frame = attrs(html.match(/<iframe id="computer"[^>]*>/i)[0]);
@@ -107,6 +107,12 @@ test('the front stages the lock, galaxy, transparent launch film and the real No
   // old controls bar went with it (the computer itself is the way on).
   assert.equal(links(html).find(link => link.id === 'own'), undefined);
   assert.equal(frame.allow, 'clipboard-read; clipboard-write; microphone; fullscreen', 'the product frame\'s permissions are as they were');
+  const phone = attrs(html.match(/<iframe id="phoneComputer"[^>]*>/i)?.[0] ?? '');
+  assert.equal(phone.id, 'phoneComputer');
+  assert.equal(phone.referrerpolicy, frame.referrerpolicy);
+  assert.ok(!phone.src && !phone.srcdoc, 'the phone has no eager navigation or imitation');
+  assert.match(html.match(/<iframe id="phoneComputer"[^>]*>/i)[0], /\binert\b/, 'the phone never accepts input');
+  assert.doesNotMatch(html, /["']\/buy(?:[?'"/]|$)/, 'there is no stale buy-page link');
   const { config } = await import(join(SITE, 'launch-config.mjs'));
   assert.equal('demoUrl' in config, false, 'the locker says which computer, after the unlock');
   assert.equal(config.demoReadyType, 'imperfect:demo-ready');
@@ -115,44 +121,55 @@ test('the front stages the lock, galaxy, transparent launch film and the real No
   assert.ok(Array.isArray(JSON.parse(await readFile(fileURLToPath(config.cuesUrl), 'utf8')).warp));
   assert.deepEqual(html.match(/<form\b[^>]*>/gi), ['<form id="lock" aria-label="Locked" autocomplete="off" novalidate hidden>'], 'one form: the lock, which only asks the locker');
   assert.doesNotMatch(html, /srcdoc=|offer-grid|hero-copy|checkout\.stripe\.com|AUD\s*(?:40|400)/i, 'cinematic front neither sells the old product nor promises signup/payment');
-  const menus = html.match(/<nav\b[^>]*class="mac-menus"[^>]*>([\s\S]*?)<\/nav>/)[1];
-  assert.deepEqual(links(menus).map(({ href, label }) => ({ href, label })), [{ href: '/buy', label: 'Shop' }], 'Shop stays in the Mac menu bar and opens the existing buy page');
+  const shell = await page('mac/shell.mjs'), shop = await page('shop.mjs'), entry = await page('launch.mjs');
+  assert.match(shell, /CustomEvent\('mac:shop',\s*\{\s*bubbles:\s*true\s*\}/, 'the menu requests the real Shop page');
+  assert.match(shop, /addEventListener\('mac:shop'/);
+  assert.match(entry, /from '\.\/shop\.mjs(?:\?v=[^']+)?'/);
+  assert.doesNotMatch(entry + html, /mac\/shop\.(?:mjs|css)/, 'the deleted Mac storefront is never loaded');
+  assert.doesNotMatch(shell + await page('mac/shell.css'), /data-kind=["']shop["']|win\.id === 'shop'/, 'there is no fake Shop window or miniature left in the shell');
+  assert.doesNotMatch(shop, /createShellWindow|createShopController|window\.open|\/shop\/code\/status/, 'the bridge opens the page in the product, not another Mac window or checkout controller');
+  assert.doesNotMatch(shell + shop, /['"]\/buy(?:[?'"/]|$)/, 'Shop does not navigate to the legacy buy page');
   assert.doesNotMatch(macWindow, /<a[^>]*class="buy"/, 'no floating buy overlay over the real app');
 });
 
-test('the static build adds memory, making, undo and the same conversation on a phone using product markup', async () => {
-  const html = await page('mac/app.html'), css = await page('mac/app/stage.css');
-  const panels = [...html.matchAll(/<section\b[^>]*data-stage-panel="([^"]+)"[^>]*>/g)];
-  assert.deepEqual(panels.map(([, name]) => name), ['memory', 'make', 'undo', 'everywhere']);
-  for (const [tag, name] of panels) {
-    assert.ok(attrs(tag).class.split(/\s+/).includes('gui-transcript'), `${name} uses the real conversation layout`);
-    assert.ok(attrs(tag)['aria-label'], `${name} has an accessible description`);
-    assert.ok(css.includes(`.s-${name}`) && css.includes(`[data-stage-panel="${name}"]`), `${name} appears with its build step`);
+test('the illustrated product, fake browser picture and obsolete build voices are deleted', async () => {
+  for (const gone of ['mac/app.html', 'mac/app', 'mac/browser-page.webp', 'mac/shop.mjs', 'mac/shop.css', 'mac/sounds/line-7.m4a', 'mac/sounds/line-8.m4a', 'mac/sounds/line-9.m4a']) {
+    assert.equal(await exists(join(SITE, gone)), false, `${gone}: no parallel fake product or abandoned stage`);
   }
-  assert.match(words(html), /what did we decide last week/i);
-  assert.match(words(html), /undo that/i);
-  assert.match(html, /class="[^"]*stage-phone[^"\n]*"/);
-  assert.match(html, /class="[^"]*stage-phone-transcript[^"\n]*"/);
-  assert.match(html, /class="[^"]*stage-phone-composer[^"\n]*"/);
-  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
-  assert.match(css, /animation-duration:\s*(?:0|1)ms\s*!important/);
+  const desktop = await page('mac/desktop.mjs');
+  assert.doesNotMatch(desktop, /kinso|time-machine|s-memory|s-make|s-everywhere|stage-phone|app\.html|browser-page/);
+  assert.deepEqual((await readdir(join(SITE, 'mac/sounds'))).filter(name => /^line-.*\.m4a$/.test(name)).sort(),
+    [...Array.from({ length: 7 }, (_, i) => `line-${i}.m4a`), 'line-phone.m4a']);
 });
 
-test('buy stages an honest account handoff, not a pretend signup or provisioned computer', async () => {
-  const html = await page('buy.html');
-  const text = words(html);
-  assert.match(text, /US\$40\b/, 'rent is US$40 a month (Noah, 15 Oct)');
-  assert.match(text, /month|monthly/i);
-  assert.match(text, /Claude/);
-  assert.match(text, /ChatGPT/);
-  assert.match(text, /(?:not yet|not live|not ready|staging|in progress|being built|still being|not available)/i);
-  assert.ok(links(html).some(link => link.href === '/account' && link.label), 'agreed sibling account route has a named handoff');
-  assert.match(text, /US\$150\b/, 'the code is US$150 once');
-  assert.deepEqual([...html.matchAll(/<form\b[^>]*>/gi)].map(m => m[0]), ['<form method="post" action="/buy">'], 'one form: the code\'s checkout');
-  assert.doesNotMatch(html, /<script\b|type=["']password["']/i, 'static page does not collect credentials');
+test('the standalone Shop uses external assets without Mac dependencies, popups or status polling', async () => {
+  const html = await readFile(join(PUBLIC, 'store/shop.html'), 'utf8');
+  const script = await readFile(join(PUBLIC, 'store/shop.js'), 'utf8');
+  assert.match(html, /<html\b[^>]*\blang=["']en["']/i);
+  assert.match(html, /<main\b/);
+  assert.match(html, /<h1\b[^>]*>[^<]+<\/h1>/);
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.ok(scripts.length > 0, 'the real page has its own external client');
+  for (const [, attributes, body] of scripts) {
+    assert.equal(attrs(attributes).type, 'module');
+    assert.equal(attrs(attributes).src, '/shop.js');
+    assert.equal(body.trim(), '', 'strict CSP needs no inline JavaScript');
+  }
+  assert.ok([...html.matchAll(/<link\b[^>]*>/gi)].some(([tag]) => attrs(tag).href === '/shop.css'));
+  assert.doesNotMatch(html, /<style\b|\sstyle\s*=|\son\w+\s*=|<iframe\b/i);
+  assert.doesNotMatch(html + script, /mac\/|mac:shop|createShellWindow|window\.open\s*\(|\/shop\/code\/status|setInterval\s*\(/, 'the actual page is not the removed Mac storefront and never waits on popup payment polling');
+  assert.match(script, /location\.assign\(/, 'Stripe checkout navigates this same browser tab');
 });
 
-test('self-hosting states AUD400 lifetime, with checkout unavailable and any old store unmistakably legacy', async () => {
+test('the old buy page is deleted and the merged project keeps its MIT licence', async () => {
+  assert.equal(await exists(join(SITE, 'buy.html')), false);
+  assert.match(await readFile(resolve(SITE, '../LICENSE'), 'utf8'), /^MIT License\n/);
+  const notices = await readFile(resolve(SITE, '../THIRD_PARTY_NOTICES.md'), 'utf8');
+  assert.match(notices, /This project is MIT-licensed\./);
+  assert.doesNotMatch(notices, /(?:This project|surrounding project)[^\n]*AGPL/i);
+});
+
+test('self-hosting states AUD400 lifetime, with its separate OS checkout unavailable', async () => {
   const html = await page('host.html');
   const text = words(html);
   assert.match(text, /(?:AUD|A\$)\s*400\b/i);
@@ -162,16 +179,11 @@ test('self-hosting states AUD400 lifetime, with checkout unavailable and any old
   assert.match(text, /ChatGPT/);
   assert.match(text, /(?:checkout|purchase|payment)[\s\S]{0,180}(?:not yet|not ready|not live|not available|being built|being prepared|in progress)/i);
   assert.doesNotMatch(html, /<form\b|<script\b|checkout\.stripe\.com/i, 'AUD400 checkout is not wired to an old price');
-  for (const link of links(html).filter(link => /^\/buy(?:[?#]|$)/.test(link.href))) {
-    assert.match(link.label, /legacy/i, 'the /buy anchor itself is explicitly legacy');
-    assert.match(text, /different[\s,]+(?:legacy\s+)?(?:product|offer)/i);
-    assert.match(text, /(?:different|existing|old|legacy) price/i);
-    assert.doesNotMatch(link.label, /400|buy now|checkout/i, 'legacy store is not an AUD400 purchase action');
-  }
+  assert.ok(!links(html).some(link => /^\/buy(?:[?#]|$)/.test(link.href)), 'the OS page does not send visitors to the deleted buy page');
 });
 
 test('all explanatory pages have accessible static structure and named navigation', async () => {
-  for (const name of ['index.html', 'buy.html', 'host.html']) {
+  for (const name of ['index.html', 'host.html']) {
     const html = await page(name);
     assert.match(html, /<html\b[^>]*\blang=["']en["']/i, name);
     assert.match(html, /<meta\b[^>]*name=["']viewport["']/i, name);
@@ -211,13 +223,18 @@ test('the cinematic front uses the subset Outfit, accessible focus and full-view
   const html = await page('index.html');
   const sheets = [...html.matchAll(/<link\b[^>]*>/gi)].map(match => attrs(match[0])).filter(link => link.rel === 'stylesheet');
   assert.ok(sheets.length > 0);
-  assert.deepEqual(sheets.map(link => link.href.split('?')[0]), ['sequence.css', 'mac/desktop.css'], 'launch styles stay separate from native lock and retained offer pages');
+  assert.deepEqual(sheets.map(link => link.href.split('?')[0]), ['sequence.css', 'mac/desktop.css', 'mac/shell.css', 'mac/phone.css'], 'the launch loads only sequence, native stage, window chrome and phone styles; Shop is a real separate page');
   const css = await page('sequence.css');
   // The Mac the film ends on draws macOS as macOS does, in the visitor's own system font: no font file, no name of one.
-  const mac = (await page('mac/desktop.css')).replace(/\/\*[\s\S]*?\*\//g, '');
-  for (const [, family] of mac.matchAll(/font-family: ([^;]+);/g)) assert.match(family, /^-apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, sans-serif$/);
+  const mac = (await Promise.all(['mac/desktop.css', 'mac/shell.css', 'mac/phone.css'].map(page))).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(mac, /font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*system-ui/);
+  for (const [, family] of mac.matchAll(/font-family:\s*([^;]+);/g)) {
+    assert.match(family, /^(?:-apple-system,\s*BlinkMacSystemFont,\s*system-ui(?:,\s*'Segoe UI',\s*Roboto,\s*sans-serif)?|(?:ui-)?monospace(?:,[^;]+)?|inherit|var\(--[\w-]+\))$/, 'Mac chrome uses system fonts; command blocks may use system monospace');
+  }
   assert.doesNotMatch(mac, /@font-face|url\([^)]*\.(?:woff2?|ttf|otf)|SF Pro|https?:\/\//, 'the Mac loads no font');
-  assert.doesNotMatch(mac, /font:[^;]*['"](?!Outfit)[^'"]+['"]/, 'its words in the launch\'s own font, or the system\'s');
+  for (const [, font] of mac.matchAll(/\bfont:\s*([^;]+);/g)) {
+    assert.match(font, /^(?:inherit|[^;]*(?:-apple-system|system-ui|Arial|ui-monospace)[^;]*)$/, 'Mac chrome uses installed system fonts; Shop content may inherit the site font');
+  }
   assert.match(css, /font-family: 'Outfit'; src: url\('fonts\/outfit-regular\.woff2'\) format\('woff2'\); font-weight: 400;[^}]*font-display: swap/);
   assert.match(css, /font-family: 'Outfit'; src: url\('fonts\/outfit-medium\.woff2'\) format\('woff2'\); font-weight: 500;[^}]*font-display: swap/);
   // The font in one place: its files (@font-face) and its name (--font), which everything takes.
@@ -324,15 +341,6 @@ test('existing art stays; only contact, the launch film, build voices and app dr
       const { INTRO, STEPS, DROP_SOUND } = await import(file);
       for (const step of [INTRO, ...STEPS]) assert.ok(await exists(join(SITE, step.voice)), `its voice: ${step.voice}`);
       assert.ok(await exists(join(SITE, DROP_SOUND)), `the drop sound: ${DROP_SOUND}`);
-    } else if (relative(SITE, file) === 'mac/app.html') {
-      const videos = [...text.matchAll(/<video\b[^>]*>/gi)].map(match => match[0]);
-      assert.equal(videos.length, 1, 'one explicit film card in the static conversation');
-      const video = videos[0], attributes = attrs(video);
-      assert.equal(attributes.src.split('#')[0], '../media/v8-lets-begin.mp4', 'the card reuses the existing film, not a second soundtrack');
-      assert.ok(attributes['aria-label'], 'the film card has an accessible name');
-      for (const flag of ['muted', 'playsinline', 'loop']) assert.match(video, new RegExp(`\\b${flag}\\b`), `${flag}: the preview cannot compete with the voice`);
-      assert.doesNotMatch(video, /\bcontrols\b/, 'a static staged card, not a second audible player');
-      assert.doesNotMatch(text.replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, ''), /AudioContext|new Audio\(|sounds\.(type|draw)\(|<(?:audio|video)\b/i, 'the muted card is the only media exception in the preview');
     } else if (relative(SITE, file) === 'index.html') {
       assert.equal([...text.matchAll(/<video\b/gi)].length, 1, 'only one launch film');
       assert.doesNotMatch(text.replace(/<video\b[^>]*>[\s\S]*?<\/video>/i, ''), /AudioContext|new Audio\(|sounds\.(type|draw)\(|<(?:audio|video)\b/i, 'no added audio outside that film');

@@ -292,6 +292,6 @@ body.guey-tui #entry-thinking {
 .guey-auth .auth-actions button:disabled,
 .guey-auth .auth-prompt button[type="submit"]:disabled { opacity: 0.45; }
 @media (pointer: coarse) {
-  .guey-auth .auth-body > button, .guey-auth .auth-provider { padding-top: 12px; padding-bottom: 12px; }
-  .guey-auth .auth-actions button { height: 36px; }
+  :where(html:not(.launch-framed)) .guey-auth .auth-body > button, :where(html:not(.launch-framed)) .guey-auth .auth-provider { padding-top: 12px; padding-bottom: 12px; }
+  :where(html:not(.launch-framed)) .guey-auth .auth-actions button { height: 36px; }
 }

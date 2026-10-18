@@ -19,8 +19,8 @@ test('offer settings load from isolated locker.env, with clean defaults and boun
     `], { env: { HOME: home, PATH: process.env.PATH, LOCKER_ENV: file } });
     return JSON.parse(stdout);
   };
-  assert.deepEqual(await load(''), { stripe: { secretKey: '', webhookSecret: '', price: '', rentPrice: '', osPrice: '' }, rentals: { graceDays: 7, retentionDays: 30 } });
+  assert.deepEqual(await load(''), { stripe: { secretKey: '', webhookSecret: '', rentPrice: '', osPrice: '' }, rentals: { graceDays: 7, retentionDays: 30 } });
   assert.deepEqual(await load('STRIPE_RENT_PRICE=price_rent\nSTRIPE_OS_PRICE=price_os\nSTRIPE_PRICE=price_legacy\nRENT_GRACE_DAYS=9\nRENT_RETENTION_DAYS=40'), {
-    stripe: { secretKey: '', webhookSecret: '', price: 'price_legacy', rentPrice: 'price_rent', osPrice: 'price_os' }, rentals: { graceDays: 9, retentionDays: 40 } });
+    stripe: { secretKey: '', webhookSecret: '', rentPrice: 'price_rent', osPrice: 'price_os' }, rentals: { graceDays: 9, retentionDays: 40 } });
   for (const value of ['0', '-1', '2.5', '366', 'no']) assert.match((await load(`RENT_GRACE_DAYS=${value}`)).error, /RENT_GRACE_DAYS/);
 });

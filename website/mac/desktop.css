@@ -1,85 +1,18 @@
-/* The end of the launch: a Mac, Noah's own screen as it was (Monterey Graphic, Dark, 1440 x 900), on which the film
-   builds the visitor's own app up (desktop.mjs). Everything is measured in the Mac's points: --us is one point in CSS
-   pixels, the screen fitted to the window. macOS's own shapes keep their rounded corners here, as macOS draws them. */
-.mac { --us: 1; --pt: calc(var(--us) * 1px); background: #160c2e; font-family: -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; user-select: none; }
-.mac[data-visible="false"] { opacity: 1; visibility: hidden; }
+/* A single desktop in native points, uniformly contained at every viewport size.
+   The cross-origin product keeps its desktop viewport even on a portrait phone. */
+.mac.screen { --scale: 1; --us: 1; --pt: 1px; position: fixed; inset: auto; left: 50%; top: 50%; width: 1600px; height: 900px; transform: translate(-50%, -50%) scale(var(--scale)); transform-origin: center; background: #160c2e; font-family: -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; user-select: none; }
+.mac[data-visible="false"] { opacity: 0; pointer-events: none; }
 .mac-wall { position: absolute; inset: 0; background: url('wallpaper.webp') center / cover no-repeat; }
-
-/* The menu bar: the person's own app has no name yet, so its menus stand alone. */
-.mac-bar { position: absolute; top: 0; left: 0; right: 0; height: calc(24 * var(--pt)); display: flex; align-items: center; padding: 0 calc(10 * var(--pt)) 0 calc(17 * var(--pt)); font-size: calc(13 * var(--pt)); line-height: 1; letter-spacing: -.005em; background: rgba(12, 6, 30, .2); -webkit-backdrop-filter: blur(calc(40 * var(--pt))) saturate(1.5); backdrop-filter: blur(calc(40 * var(--pt))) saturate(1.5); text-shadow: 0 0 calc(2 * var(--pt)) rgba(0, 0, 0, .15); }
-.mac-bar svg { display: block; fill: currentColor; }
-.mac-apple { width: calc(20 * var(--pt)); height: calc(24 * var(--pt)); display: grid; place-items: center; margin-right: calc(8 * var(--pt)); }
-.mac-apple svg { width: calc(14 * var(--pt)); height: calc(17 * var(--pt)); }
-.mac-menus { display: flex; height: 100%; align-items: center; }
-.mac-menus span, .mac-menus a { padding: 0 calc(10.5 * var(--pt)); }
-.mac-menus a { height: 100%; display: flex; align-items: center; color: inherit; text-decoration: none; }
-.mac-menus a:hover { background: rgba(255,255,255,.15); }
-.mac-bar { z-index: 12; }
-.mac-status { margin-left: auto; display: flex; align-items: center; height: 100%; }
-.mac-status > span { display: grid; place-items: center; min-width: calc(34 * var(--pt)); height: 100%; }
-.mac-status svg { height: calc(16 * var(--pt)); width: auto; }
-.mac-status .mac-siri svg { height: calc(17 * var(--pt)); }
-.mac-clock { padding: 0 calc(8 * var(--pt)) 0 calc(11 * var(--pt)); white-space: nowrap; font-variant-numeric: tabular-nums; }
-
-/* The window: the person's app, white, in the middle of the screen, as macOS draws a window (its corners, its
-   shadow, its three buttons). The page inside is imperfect's own, made static (app.html), at the Mac's own size. */
-.mac-window { position: absolute; left: 50%; top: 48px; width: min(1280px, calc(100% - 96px)); height: calc(100% - 200px); transform: translateX(-50%); border-radius: 10px; overflow: hidden; background: #121214;
-  box-shadow: 0 0 0 calc(.5 * var(--pt)) rgba(0, 0, 0, .85), 0 calc(22 * var(--pt)) calc(70 * var(--pt)) rgba(0, 0, 0, .5), 0 calc(6 * var(--pt)) calc(18 * var(--pt)) rgba(0, 0, 0, .3); }
-.mac-window iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #121214; pointer-events: none; }
-/* In Dark, a window has a faint light edge inside its dark one. */
-.mac-window::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 calc(.5 * var(--pt)) rgba(255, 255, 255, .2); pointer-events: none; z-index: 1; }
-.mac-lights { position: absolute; top: calc(11 * var(--pt)); left: calc(14 * var(--pt)); display: flex; gap: calc(8 * var(--pt)); z-index: 2; }
-.mac-lights i { width: calc(12 * var(--pt)); height: calc(12 * var(--pt)); border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 calc(.5 * var(--pt)) rgba(0, 0, 0, .18); }
-.mac-lights i:nth-child(2) { background: #febc2e; }
-.mac-lights i:nth-child(3) { background: #28c840; }
-
-/* Both documents always have exactly the same native viewport. The last build
-   part is the real app, already painted but inert. The ending enables input only.
-   Never fade through an unverified/error document, resize, or hide the desktop. */
-.mac-window .demo { position: absolute; inset: 0; background: #121214; transition: none; }
-.mac-window .demo iframe { width: 100%; height: 100%; transform: none; pointer-events: auto; }
-.mac[data-hosted="true"] .mac-window > iframe { visibility: hidden; }
-.mac-lights { pointer-events: none; }
-.mac[data-hosted="true"] .mac-lights { display: none; }
-.mac-offline { position: absolute; z-index: 11; bottom: 16px; left: 16px; right: 16px; margin: 0; padding: 8px 12px; color: #bbb; background: #161618; font-size: 13px; }
+.mac-window { position: absolute; left: 160px; top: 25px; width: 1280px; height: 796px; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 0 0 .5px #0008, 0 22px 70px #0007, 0 6px 18px #0005; }
+.mac-window::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 .5px #fff5; pointer-events: none; z-index: 1; }
+.mac-window .demo { position: absolute; inset: 0; background: #fff; transition: none; }
+.mac-window .demo iframe { position: absolute; inset: 0; border: 0; width: 100%; height: 100%; transform: none; pointer-events: auto; background: #fff; }
+.mac-offline { position: absolute; z-index: 11; bottom: 16px; left: 16px; right: 16px; margin: 0; padding: 8px 12px; color: #555; background: #eee; font-size: 13px; }
 .mac-offline button { text-decoration: underline; padding: 6px; }
-@media (max-width: 600px) {
-  .mac-bar { height: 32px; font-size: 13px; padding: 0 12px; }
-  .mac-menus span, .mac-status > span, .mac-apple { display: none; }
-  .mac-menus a { padding: 0 10px; min-width: 44px; }
-  .mac-clock { padding: 0; }
-  .mac .mac-window { top: 44px; width: calc(100% - 16px); height: calc(100% - 150px); }
-  .mac .mac-lights { top: 10px; left: 12px; gap: 6px; }
-  .mac .mac-lights i { width: 8px; height: 8px; }
-  .mac .mac-line { font: 500 16px/1.2 var(--font); padding: 8px 12px; top: auto; bottom: 54px; width: max-content; max-width: calc(100% - 16px); white-space: normal; text-align: center; }
-  .mac .mac-dock { bottom: 12px; }
-  .mac .mac-ghost { min-width: 40px; min-height: 40px; }
-  .mac .mac-bar { padding-top: env(safe-area-inset-top); }
-}
-/* The Dock: the apps the person's own app is about to take the place of. */
-.mac-dock { position: absolute; left: 50%; bottom: calc(7 * var(--pt)); transform: translateX(-50%); display: flex; align-items: flex-end; height: calc(76 * var(--pt)); padding: 0 calc(4 * var(--pt)); border-radius: calc(19 * var(--pt)); background: rgba(70, 40, 110, .32); -webkit-backdrop-filter: blur(calc(30 * var(--pt))) saturate(1.6); backdrop-filter: blur(calc(30 * var(--pt))) saturate(1.6);
-  box-shadow: inset 0 0 0 calc(.5 * var(--pt)) rgba(255, 255, 255, .28), 0 0 0 calc(.5 * var(--pt)) rgba(0, 0, 0, .35), 0 calc(8 * var(--pt)) calc(30 * var(--pt)) rgba(0, 0, 0, .25); }
-.mac-tile { position: relative; flex: none; width: calc(68 * var(--pt)); height: 100%; }
-.mac-tile img { position: absolute; left: calc(2 * var(--pt)); top: calc(6 * var(--pt)); width: calc(64 * var(--pt)); height: calc(64 * var(--pt)); display: block; will-change: transform; }
-.mac-tile .mac-run { position: absolute; left: 50%; bottom: calc(2.5 * var(--pt)); width: calc(4 * var(--pt)); height: calc(4 * var(--pt)); margin-left: calc(-2 * var(--pt)); border-radius: 50%; background: rgba(255, 255, 255, .72); }
-.mac-gap { flex: none; width: calc(31 * var(--pt)); height: 100%; display: grid; place-items: center; }
-.mac-gap::before { content: ''; width: calc(1 * var(--pt)); height: calc(54 * var(--pt)); background: rgba(255, 255, 255, .26); }
-/* Pressed, or with something held over it: the Dock darkens the icon. */
-.mac-tile img.mac-dim { filter: brightness(.5); }
-
-/* The pointer carries an app from its Dock slot into the window. */
-.mac-cursor { position: absolute; left: 0; top: 0; pointer-events: none; will-change: translate; }
-.mac-cursor { width: calc(17 * var(--pt)); height: calc(23 * var(--pt)); z-index: 4; }
-.mac-ghost { position: absolute; z-index: 3; display: block; pointer-events: none; will-change: translate; }
-
-/* What is being built, said in words (and later in a voice): high enough to stay clear of what the pointer lifts
-   out of the Dock. */
-.mac-line { position: absolute; z-index: 13; left: 50%; bottom: calc(90 * var(--pt)); transform: translate(-50%, 0); margin: 0; padding: calc(10 * var(--pt)) calc(20 * var(--pt)); border-radius: calc(12 * var(--pt)); background: rgba(16, 10, 30, .62); -webkit-backdrop-filter: blur(calc(20 * var(--pt))); backdrop-filter: blur(calc(20 * var(--pt))); color: #fff; font: 500 calc(22 * var(--pt))/1.2 var(--font); letter-spacing: .01em; white-space: nowrap; opacity: 0; transition: opacity .45s ease, transform .6s cubic-bezier(.2, .8, .2, 1); pointer-events: none; }
-.mac-line[data-on="true"] { opacity: 1; transform: translate(-50%, calc(-6 * var(--pt))); }
-
-/* The film's frame goes up like a blind, and the Mac was under it. */
-/* In the page's order: the Mac, this black, then the sky and the film over them. */
-.curtain { position: fixed; inset: 0; background: #000; box-shadow: 0 30px 90px 30px rgba(0, 0, 0, .7); pointer-events: none; }
+.mac-cursor { position: absolute; left: 0; top: 0; width: 17px; height: 23px; z-index: 1202; pointer-events: none; will-change: translate; }
+.mac-ghost { position: absolute; z-index: 1201; display: block; pointer-events: none; will-change: translate; object-fit: contain; }
+.mac-consumed, .dock-slot.consumed { display: none !important; }
+.mac-build-shield { position: absolute; inset: 25px 0 0; z-index: 950; cursor: none; }
+.curtain { position: fixed; inset: 0; background: #000; box-shadow: 0 30px 90px 30px #000b; pointer-events: none; }
 body[data-curtain] :is(#introScreen, #filmScreen, #curtain) { transition: transform var(--rise-ms, 1500ms) cubic-bezier(.65, 0, .25, 1); will-change: transform; }
 body[data-curtain="up"] :is(#introScreen, #filmScreen, #curtain) { transform: translateY(calc(-100% - 140px)); }
-@media (prefers-reduced-motion: reduce) { .mac-line { transition: none; } }

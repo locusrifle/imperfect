@@ -149,8 +149,7 @@ test('browser tester and disabled pages are explanatory, not broken checkout con
   assert.equal(await page.locator('form[action="/os/buy"]').count(), 0);
   assert.equal(await page.getByRole('link', { name: /Ask about imperfect OS/ }).count(), 1);
   await page.goto(`${f.origin}/rent.html`);
-  assert.equal(new URL(page.url()).pathname, '/buy', 'the old rent address lands on the buy page');
-  assert.match(await page.textContent('body'), /Monthly billing is not open yet/);
+  assert.equal(new URL(page.url()).pathname, '/', 'the old rent address lands on the desktop');
   grantTester(f.store, 'alder', f.now() + DAY, f.now());
   await page.goto(`${f.origin}/account`);
   assert.match(await page.textContent('body'), /you’re a tester, no card needed/);

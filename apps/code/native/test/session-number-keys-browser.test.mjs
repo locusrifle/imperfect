@@ -159,8 +159,8 @@ test('Electron sends Super (and the enabled Alt alias) +1 to +5 from websites to
     assert.equal(key('KeyW'), 'close');
     assert.equal(key('KeyF'), 'full');
     assert.equal(key('KeyF', { shift: true }), 'fullWindow');
-    assert.equal(key('KeyV'), 'clipboard');
-    assert.equal(key('KeyV', { shift: true }), '');
+    assert.equal(key('KeyV'), '');
+    assert.equal(key('KeyV', { shift: true }), 'clipboard');
     assert.equal(key('Digit6'), '');
     assert.equal(key('Digit1', { shift: true }), '');
     assert.equal(key('Digit1', { control: true }), '');

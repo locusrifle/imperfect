@@ -163,7 +163,7 @@ for (const width of [390, 1200]) test(`Own password account lifecycle at ${width
   await saveCodes(page); // untrusted next must stay on the store
   assert.ok(f.store.account(account.id).recovery_saved_at);
   assert.match(await page.textContent('body'), new RegExp(`${username}\\.imperfect\\.computer`));
-  // Signing up gives no key: the code is bought on /buy (US$150), so a new account shows no install line.
+  // Signing up gives no legacy membership key; public GitHub clones need no key.
   assert.doesNotMatch(await page.textContent('body'), /your copy of the code|git clone/);
   assert.equal(await page.evaluate(() => window.accountInjected), undefined, 'display name is HTML-escaped');
   for (const code of codes) assert.ok(!(await page.textContent('body')).includes(code), 'codes shown once, absent from account page');

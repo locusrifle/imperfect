@@ -3,8 +3,7 @@
 // and the window behind it are one sky. When the lock goes the bars, panels and input bar fade in over it, opacity
 // only, and then the sky fades away under them to the window's own plain ground:
 // the galaxy is the lock's and the website's, not the app's (Noah). Without word of a lock (any other computer,
-// the phone, a browser, an older imperfect OS) none of this happens: the UI is simply there, as it is; except
-// framed by imperfect.computer, where the website's sky is behind it from the start (framedByLaunch). A lock whose
+// the phone, a browser, an older imperfect OS) none of this happens: the UI is simply there. A lock whose
 // keeper has gone, or a word that the lock has gone, brings the UI back.
 import { still } from './turn.js';
 import { demoParentOrigin } from './demo-ready.js';
@@ -14,30 +13,19 @@ export const arrivalFrames = () => [{ opacity: 0 }, { opacity: 1 }];
 
 const finite = v => (Number.isFinite(v) ? v : null);
 
-// Framed by imperfect.computer (the launch site's live product, demo-ready.js): the same sky behind it as on
-// Noah's own computer after its lock, from the moment it opens, so the product there looks as it does here.
+// The authenticated launch frame shares demo-ready's exact origin rules.
 export function framedByLaunch(win = globalThis.window, doc = globalThis.document) {
   try { return Boolean(win && doc && win.parent !== win && demoParentOrigin(win.location.origin, doc.referrer)); } catch { return false; }
 }
-function keepFramed({ load, clock }) {
-  const root = document.documentElement, now = clock(), times = { epoch: now, touched: null, gone: now };
-  const canvas = document.createElement('canvas');
-  canvas.className = 'kept-sky';
-  canvas.setAttribute('aria-hidden', 'true');
-  document.body.prepend(canvas);
-  const handle = { kept: null };
-  const fallback = () => { handle.kept?.dispose(); handle.kept = null; canvas.remove(); root.classList.remove('kept-sky'); };
-  load().then(({ mountKeptSky }) => {
-    handle.kept = mountKeptSky(canvas, times, { clock, onLost: fallback });
-    if (!handle.kept) { fallback(); return; }
-    handle.kept.frame();
-    root.classList.add('kept-sky');
-  }).catch(fallback);
-  return handle;
+// A second authenticated launch frame can demonstrate the phone's own layout.
+// The query is a presentation hint only inside the same exact trusted frame boundary.
+export function phoneByLaunch(win = globalThis.window, doc = globalThis.document) {
+  try { return framedByLaunch(win, doc) && new URLSearchParams(win.location.search || '').get('launch') === 'phone'; }
+  catch { return false; }
 }
 
-export function mountArrival(desk = globalThis.imperfectDesk, { load = () => import('./kept-sky.js'), clock = () => Date.now() / 1000, framed = framedByLaunch } = {}) {
-  if (!desk?.onLock) return framed() ? keepFramed({ load, clock }) : null;
+export function mountArrival(desk = globalThis.imperfectDesk, { load = () => import('./kept-sky.js'), clock = () => Date.now() / 1000 } = {}) {
+  if (!desk?.onLock) return null;
   const root = document.documentElement;
   let locked = false, times = null, kept = null, canvas = null, turning = [], leaving = null;
 

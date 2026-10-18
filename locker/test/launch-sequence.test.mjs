@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, readdir } from 'node:fs/promises';
+import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import { demoAddress, isDemoReady, waitForMedia, primeVideo, playVideo, fadeDuration, preloadDue } from '../../website/media.mjs';
 import { config } from '../../website/launch-config.mjs';
 import { BURST, PEAK, bubbleMotion, createPlayer } from '../../website/bootup.mjs';
@@ -16,13 +18,20 @@ import * as revealBefore from './fixtures/reveal-before-sound.mjs';
 import { warpTable, filmRect, ASPECT } from '../../website/film.mjs';
 import { GOAT, MASS, goatTimes, goatAt, opticalWordmark, placeGoat } from '../../website/intro/goat.mjs';
 import { workbenchOf } from '../../website/lock.mjs';
-import { INTRO, STEPS } from '../../website/mac/desktop.mjs';
+import { INTRO, STEPS, VOICE_RATE, SCREEN } from '../../website/mac/desktop.mjs';
+import { mountAssembly, mountLaunchDrag, ASSEMBLY_STEPS } from '../../apps/code/native/public/js/assembly.js';
+import { phoneByLaunch } from '../../apps/code/native/public/js/arrival.js';
+import { frameDragAllowed, WINDOW_DEFAULT, DESKTOP_BAND } from '../../website/mac/shell.mjs';
+import { detectOS } from '../public/store/shop-platform.mjs';
+import { launchShopURL, mountLaunchOpen, prepareLaunchShop } from '../../apps/code/native/public/js/launch-open.js';
 const read = path => readFile(new URL('../../website/' + path, import.meta.url), 'utf8');
 // Check responsibilities, not line breaks or the exact prose of comments between functions.
 function functionSource(text, name) {
   const match = text.match(new RegExp(`^([ \\t]*)(?:async )?function ${name}\\(`, 'm'));
   assert.ok(match, `${name} exists`);
   const rest = text.slice(match.index);
+  const firstLine = rest.split('\n')[0];
+  if (firstLine.trimEnd().endsWith('}')) return firstLine;
   const end = rest.indexOf(`\n${match[1]}}\n`);
   assert.ok(end >= 0, `${name} has a body`);
   return rest.slice(0, end + match[1].length + 2);
@@ -103,11 +112,13 @@ test('static page keeps PWA/icon additions, has no old marketing/cards or fake a
   assert.match(text, /<button id="unlock" type="submit" aria-label="Unlock">/);
   assert.equal(text.match(/<form\b/g).length, 1, 'one form: the lock');
   assert.equal(text.match(/<input\b/g).length, 1, 'one field: the password');
-  const pictures = text.match(/<img\b[^>]*>/g), dock = /^<img src="mac\/icons\/[\w-]+\.webp" alt="">$/;
+  const pictures = text.match(/<img\b[^>]*>/g);
   const pointer = '<img class="mac-cursor" src="mac/cursor.png" alt="" aria-hidden="true">';
-  assert.deepEqual(pictures.filter(img => !dock.test(img) && img !== pointer), ['<img class="goat" id="goat" alt="" aria-hidden="true" decoding="async" hidden>'], 'one picture of its own: the goat after the word');
-  assert.ok(pictures.filter(img => dock.test(img)).length >= 8, 'and the Mac the film ends on: its Dock\'s icons and its pointer, nothing else (mac/desktop.mjs)');
+  assert.deepEqual(pictures.filter(img => img !== pointer), ['<img class="goat" id="goat" alt="" aria-hidden="true" decoding="async" hidden>'], 'only the goat and pointer are authored pictures; the shell creates the Dock');
   assert.equal(pictures.filter(img => img === pointer).length, 1, 'one pointer');
+  assert.equal([...text.matchAll(/<iframe\b/g)].length, 2, 'only the real desktop and inert phone product documents');
+  assert.match(text, /<iframe id="phoneComputer"[^>]*\binert\b/);
+  assert.doesNotMatch(text, /mac\/app(?:\.html|\/)|browser-page|caption/);
   assert.doesNotMatch(text, /id="power"|Power on/, 'no power button');
   assert.doesNotMatch(text, /noah\.imperfect\.computer|\/door\/ticket/, 'no computer\'s address in the page: the locker gives it after the unlock');
   assert.doesNotMatch(text, /launchControls|id="own"|id="mute"|id="pause"|id="replay"/, 'no controls bar');
@@ -207,7 +218,7 @@ test('reduced motion removes inter-screen fades', () => {
   assert.equal(fadeDuration(true, 650), 0); assert.equal(fadeDuration(false, 650), 650);
 });
 
-// ---- Film-to-product handoff: hidden preload during the film, crossfade only when verified.
+// ---- Film-to-product handoff: hidden real-product preload and painted assembly, with no document swap.
 const ranges = list => ({ length: list.length, start: i => list[i][0], end: i => list[i][1] });
 const playingAt = (currentTime, list, patch = {}) => ({ paused: false, ended: false, readyState: 4, currentTime, duration: 129.742, buffered: ranges(list), ...patch });
 test('preload waits for ~10 s of actual playback and a buffer cushion, never during startup, pause or starvation', () => {
@@ -235,86 +246,723 @@ test('launch config: v8 film, 10 s preload, 1.2 s handoff that reduced motion ma
   assert.equal(config.handoffMs, 1200); assert.equal(config.fadeMs, 650); assert.equal(config.demoTimeoutMs, 15000);
   assert.equal(fadeDuration(true, config.handoffMs), 0); assert.equal(fadeDuration(false, config.handoffMs), 1200);
 });
-test('film lifts to the Mac build; only its ending can reveal the exact-handshake live frame', async () => {
-  const text = await read('launch.mjs');
-  const show = functionSource(text, 'showMac');
-  assert.match(text, /createMac\(\{[^}]*onfinish:\s*finishMac/);
+test('film lifts only after real bare assembly; one document is presented without a swap', async () => {
+  const text = await read('launch.mjs'), show = functionSource(text, 'showMac');
+  assert.match(text, /createMac\(\{[^}]*onstage:\s*assemble[^}]*onfinish:\s*finishMac/);
   assert.match(text, /video\.addEventListener\('ended',\s*\(\)\s*=>\s*\{[^}]*phase === 'film'[^}]*showMac\(\)/);
+  assertBefore(show, "waitForAssembly('bare')", 'await mac.reveal()', 'real product paints before the film lifts');
   assertBefore(show, 'await mac.reveal()', 'mac.play()', 'the blind lifts before the build starts');
   assert.match(show, /visible\(filmScreen,\s*false\)/);
-  assert.doesNotMatch(show, /visible\(demoScreen,\s*true\)|revealLive\(/, 'film end is not product readiness');
+  assert.doesNotMatch(show, /visible\(demoScreen,\s*true\)|revealLive\(/);
   const finish = functionSource(text, 'finishMac'), reveal = functionSource(text, 'revealLive');
   assert.match(finish, /ending\s*=\s*true/);
-  assert.doesNotMatch(finish, /grow|delay|fade/);
-  assertBefore(finish, 'mac.finish()', 'endingReady = true', 'the voice ends before interactivity');
+  assert.doesNotMatch(finish, /grow|delay|fade|frame\.src\s*=/);
+  assertBefore(finish, 'mac.finish()', 'endingReady = true', 'only the completed build enables interactivity');
   const present = functionSource(text, 'presentBuild');
-  assert.match(present, /!demoVerified \|\| !mac\.state\(\)\.built\.includes\('s-live'\)/);
+  assert.match(present, /!demoVerified\s*\|\|\s*!paintedStep/);
   assert.match(present, /demoScreen\.inert = !endingReady/);
-  assert.match(present, /visible\(demoScreen,\s*true\)/);
   assert.match(present, /mac\.present\(true\)/);
-  assert.match(reveal, /if\s*\(\s*!endingReady\s*\|\|\s*!demoVerified\s*\)\s*return/);
+  assert.match(reveal, /!endingReady\s*\|\|\s*!demoVerified\s*\|\|\s*paintedStep !== 'done'/);
   assert.match(reveal, /presentBuild\(\)/);
   assert.match(reveal, /mac\.live\(true\)/);
-  assert.equal([...text.matchAll(/visible\(demoScreen,\s*true\)/g)].length, 1, 'one guarded path reveals the product');
-  assert.equal([...text.matchAll(/demoVerified\s*=\s*true/g)].length, 1, 'only the exact handshake listener verifies');
-  assert.match(text, /if\s*\(!demo\s*\|\|\s*!isDemoReady\(event,\s*frame,\s*demo,\s*config\.demoReadyType\)\)\s*return;\s*demoVerified\s*=\s*true/);
+  assert.equal([...text.matchAll(/visible\(demoScreen,\s*true\)/g)].length, 1, 'one guarded presentation path');
+  assert.equal([...text.matchAll(/demoVerified\s*=\s*true/g)].length, 1, 'only the exact handshake verifies');
   const request = functionSource(text, 'requestDemo'), preload = functionSource(text, 'preloadDemo');
   assert.match(preload, /phase !== 'film'\s*\|\|\s*document\.hidden\s*\|\|\s*stallTimer !== null/);
   assert.match(preload, /preloadDue\(video,/);
   assert.match(preload, /requestDemo\(\)/);
-  assert.match(request, /await remembered\(\)/, 'refresh the short-lived ticket just before frame navigation');
-  assert.match(request, /bench\?\.id !== workbench\.id/, 'refresh cannot switch to another computer');
-  assert.match(request, /visible\(demoScreen,\s*false\)/);
+  assert.match(request, /await remembered\(\)/, 'refresh the short-lived ticket just before navigation');
+  assert.match(request, /bench\?\.id !== workbench\.id/, 'refresh cannot switch computers');
   assert.match(request, /frame\.src\s*=\s*demo\.href/);
-  assert.doesNotMatch(preload + request, /visible\(demoScreen,\s*true\)|demoVerified\s*=\s*true|revealLive\(/, 'preload can never reveal');
-  assert.match(text, /if\s*\(\+\+frameLoads > 1\)\s*\{\s*demoVerified\s*=\s*false;\s*visible\(demoScreen,\s*false\)/, 'a new document must earn its own handshake');
+  assert.doesNotMatch(preload + request, /visible\(demoScreen,\s*true\)|demoVerified\s*=\s*true|revealLive\(/);
+  assert.equal([...text.matchAll(/frame\.src\s*=/g)].length, 1, 'only initial load or explicit retry can navigate the existing iframe');
+  assert.doesNotMatch(text + await read('mac/desktop.mjs') + await read('mac/phone.mjs'), /srcdoc|app\.html|replaceChild|replaceWith|frame\.remove\(|append\(frame\)/, 'never replace, detach or simulate either real app');
+  const shell = await read('mac/shell.mjs');
+  assert.doesNotMatch(shell, /frame\.(?:src\s*=|remove\(|replaceWith\()|appWindow\.(?:remove\(|replaceChildren\(|replaceWith\()|(?:append|prepend|replaceChildren)\(frame\)/, 'closing, minimizing, zooming and restoring must preserve the same iframe document');
 });
-test('unreachable computers stay hidden behind a quiet static preview and an explicit retry', async () => {
+test('unreachable computers have an honest live error and explicit Retry, never a fake preview', async () => {
   const text = await read('launch.mjs'), mac = await read('mac/desktop.mjs'), html = await read('index.html');
-  const finish = functionSource(text, 'finishMac');
-  assert.match(finish, /if\s*\(demoVerified\)\s*revealLive\(\);\s*else\s*\{\s*mac\.offline\(\)/);
-  assert.doesNotMatch(finish, /fallbackPrompt|setPhase\('demo-error'\)|location\.|frame\.src/, 'an unavailable live app must not replace the static window with an error page');
-  assert.match(text, /frame\.addEventListener\('error',[\s\S]*?demoVerified\s*=\s*false;\s*visible\(demoScreen,\s*false\)/);
+  assert.match(functionSource(text, 'finishMac'), /if\s*\(demoVerified && paintedStep === 'done'\)\s*revealLive\(\);\s*else\s*\{\s*mac\.offline\(\)/);
   assert.match(text, /\$\('macRetry'\)\.addEventListener\('click',\s*\(\)\s*=>\s*requestDemo\(\)\)/);
   assert.match(html, /class="mac-offline"[^>]*role="status"[^>]*hidden/);
-  assert.match(html, /The preview is still here\./);
+  assert.match(html, /Your computer is not available yet\./);
   assert.match(html, /id="macRetry"[^>]*>Try again<\/button>/);
-  assert.match(mac, /function offline\(\)\s*\{[^}]*\.hidden\s*=\s*false/);
-  assert.doesNotMatch(functionSource(mac, 'setLive'), /\.remove\(|\.src\s*=/, 'the static preview remains available after a live navigation fails');
+  assert.doesNotMatch(html, /preview is still here|app\.html|srcdoc/);
+  assert.match(functionSource(mac, 'offline'), /\.hidden\s*=\s*false/);
+  assert.doesNotMatch(functionSource(mac, 'setLive') + functionSource(mac, 'present'), /\.src\s*=|\.remove\(/);
 });
-test('a plain-window line 0 and nine build steps all have M4A voices and enough measured reading time', async () => {
-  assert.equal(STEPS.length, 9);
-  assert.deepEqual(STEPS.map(s => s.build), ['s-harness', 's-files', 's-browser', 's-messages', 's-memory', 's-make', 's-undo', 's-everywhere', 's-live']);
-  assert.deepEqual(STEPS.map(s => s.apps), [['claude', 'chatgpt'], ['finder'], ['safari'], ['kinso'], ['notes'], ['imovie'], ['time-machine'], [], []]);
-  for (const [i, step] of [INTRO, ...STEPS].entries()) {
-    assert.equal(step.voice, `mac/sounds/line-${i}.m4a`);
-    const measured = m4aDurationMs(await readFile(new URL('../../website/' + step.voice, import.meta.url)));
-    assert.ok(Number.isFinite(step.durationMs) && step.durationMs + .01 >= measured, `line ${i}: ${step.durationMs} ms holds its measured ${measured} ms voice`);
+test('the new phone voice joins the seven unchanged measured goat lines at .8 speed', async () => {
+  const lines = [INTRO, ...STEPS], manifest = JSON.parse(await read('mac/sounds/voice.json'));
+  const originals = lines.filter(line => !line.phone);
+  assert.deepEqual(lines.map(s => s.text), [
+    "This is a Mac. And this is imperfect. Let's build it.", 'Drop in Claude Code.', 'Then ChatGPT.', 'Your files.', 'And a browser.',
+    "And it's on your phone.", "Now that software is one sentence away, you don't need apps other people made.", "It's yours.",
+  ]);
+  assert.equal(manifest.voice, 'VMXigKbZ87s0JTqCj2sl');
+  assert.equal(manifest.lines.length, 8);
+  assert.deepEqual(STEPS.map(s => s.build ?? null), ['claude', 'codex', 'files', 'browser', null, null, 'done']);
+  assert.deepEqual(STEPS.map(s => s.apps ?? []), [['claude'], ['chatgpt'], ['finder'], ['safari'], [], ['final-cut', 'imovie', 'notes'], []]);
+  assert.equal(STEPS[4].phone, true); assert.equal(STEPS[5].trash, true);
+  assert.equal(STEPS[4].voice, 'mac/sounds/line-phone.m4a');
+  assert.equal(VOICE_RATE, .8);
+  assert.deepEqual(originals.map(line => line.durationMs), [4720, 1680, 1840, 1200, 1120, 4720, 1120], 'the original seven recordings keep their measured timings');
+  assert.deepEqual(originals.map(line => line.voice), Array.from({ length: 7 }, (_, i) => `mac/sounds/line-${i}.m4a`));
+  assert.deepEqual(originals.map(line => manifest.lines.find(row => row.voice === line.voice)?.speechEndMs), [4800, 1760, 1920, 1040, 1120, 4800, 1120], 'the seven original voice records are unchanged');
+  const hashes = [
+    '726f227f57ae4970712d82a4f6d78319ba8ebc12aa01a09f4e537c250e17062b',
+    '2cc37343cfdc98712ccc7ac247b7c32e96175a211c663fd1786748ee3152512e',
+    '3f9707a39ea3fdef923e7bafd05a3f3fba9bfb0f18c4c23cf3ba24ec87736b46',
+    'c676fdf6541bbba9fd873e852ebadef08ead01c2809e3d604c2ab6bd3db80275',
+    '40021685ce92a38fc860202c77e55ce3867952e69db996f3497afb1a38ae95fd',
+    'cd3ea93a493c11803d485dba5d3bbcd84591603a34ca10af1ae9d16f1a4cdac6',
+    'cb089676bc1186ed4efca775f33d0f598a74f51df1216ccd4af887a5ba28bb86',
+  ];
+  for (const [i, line] of originals.entries()) {
+    const bytes = await readFile(new URL('../../website/' + line.voice, import.meta.url));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), hashes[i], `${line.voice}: original recording is byte-for-byte unchanged`);
   }
+  let total = 0;
+  for (const line of lines) {
+    const measured = m4aDurationMs(await readFile(new URL('../../website/' + line.voice, import.meta.url)));
+    assert.ok(Math.abs(line.durationMs - measured) < 2, `${line.voice}: ${line.durationMs} ms matches its actual ${measured} ms audio`);
+    const record = manifest.lines.find(row => row.voice === line.voice);
+    assert.equal(record?.text, line.text);
+    assert.equal(record?.durationMs, line.durationMs);
+    total += measured / VOICE_RATE;
+  }
+  assert.ok(total > 22000 && total < 28000, `${total} ms of speech leaves room for travel and a brief phone beat`);
+  assert.deepEqual((await readdir(new URL('../../website/mac/sounds/', import.meta.url))).filter(n => /^line-.*\.m4a$/.test(n)).sort(), lines.map(line => line.voice.split('/').at(-1)).sort());
   const mac = await read('mac/desktop.mjs');
-  const play = functionSource(mac, 'play');
-  assertBefore(play, 'await sound(INTRO.voice, INTRO.durationMs)', 'STEPS.entries()', 'line 0 finishes over the plain window, before step 1');
-  assert.match(play, /sound\(s\.voice,\s*s\.durationMs\)/);
-  const waitedVoice = play.match(/await\s+(?:spoken\b|Promise\.all\(\[[^\]]*\bspoken\b[^\]]*\]\))/);
-  assert.ok(waitedVoice && play.indexOf('await onfinish') > waitedVoice.index, 'the final spoken line finishes before the real app takes over');
-  assert.match(functionSource(mac, 'sound'), /Promise\.all\(\[finished,\s*delay\(durationMs\)\]\)/, 'voice completion and measured duration both hold the step');
-  const html = await read('index.html');
-  for (const name of STEPS.flatMap(s => s.apps)) assert.ok(html.includes(`data-app="${name}"`), `the Dock contains ${name}`);
+  assert.match(mac, /voicePlayer\.playbackRate\s*=\s*VOICE_RATE/);
+  const sound = functionSource(mac, 'sound');
+  assert.match(sound, /addEventListener\('ended'/);
+  assert.match(sound, /voicePlayer\.currentTime\s*\*\s*1000\s*\/\s*line\.durationMs/, 'flight follows the audio clock, not a second unsynchronised timer');
+  assert.match(sound, /line\.durationMs\s*\/\s*VOICE_RATE/, 'silent failure uses the same slowed duration');
+  assertBefore(functionSource(mac, 'intoWindow'), 'await spoken.done', 'drop(', 'the option lands when the actual voice ends');
 });
-test('the same native-sized window hosts the live app; apps drop into it, with no grow or crossfade', async () => {
-  const css = await read('mac/desktop.css'), sequence = await read('sequence.css');
-  assert.doesNotMatch(css, /data-grown|transition: (?:left|opacity 1\.2s)|\.mac\[data-live="true"\]/);
+test('the native 1600x900 desktop is uniformly contained; only the separate phone frame uses phone layout', async () => {
+  assert.deepEqual(SCREEN, { w: 1600, h: 900 });
+  assert.deepEqual(WINDOW_DEFAULT, { x: 160, y: 25, width: 1280, height: 796 });
+  assert.deepEqual(DESKTOP_BAND, { x: 0, y: 25, width: 1600, height: 796 });
+  const css = await read('mac/desktop.css'), mac = await read('mac/desktop.mjs'), sequence = await read('sequence.css');
+  assert.match(css, /\.mac-window\s*\{[^}]*left:\s*160px;[^}]*top:\s*25px;[^}]*width:\s*1280px;[^}]*height:\s*796px/);
+  assert.match(await read('mac/shell.css'), /\.mac \.shell-dock\s*\{[^}]*height:\s*72px;[^}]*bottom:\s*6px/);
+  assert.match(await read('mac/phone.css'), /#phoneComputer\s*\{[^}]*width:\s*390px;[^}]*height:\s*844px;[^}]*pointer-events:\s*none/);
+  assert.match(css, /\.mac\.screen\s*\{[^}]*left:\s*50%;[^}]*top:\s*50%;[^}]*width:\s*1600px;[^}]*height:\s*900px/);
+  assert.match(css, /transform:\s*translate\(-50%,\s*-50%\) scale\(var\(--scale\)\)/);
+  assert.match(functionSource(mac, 'fit'), /Math\.min\(innerWidth\s*\/\s*SCREEN\.w,\s*innerHeight\s*\/\s*SCREEN\.h\)/);
+  assert.doesNotMatch(css, /max-width:|max-height:|orientation:|stage-phone|data-grown|\.mac\[data-live="true"\]/);
   assert.match(css, /\.mac-window \.demo\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*transition:\s*none/);
   assert.match(css, /\.mac-window \.demo iframe\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*transform:\s*none;[^}]*pointer-events:\s*auto/);
-  assert.match(css, /data-hosted="true"[^}]*visibility: hidden/);
-  assert.doesNotMatch(css, /\.mac-dock\s*\{[^}]*opacity:\s*0/);
-  const mac = await read('mac/desktop.mjs'), drop = functionSource(mac, 'intoWindow');
-  assert.doesNotMatch(mac, /toTrash|trashed|mac-remove|function grow/);
-  assert.match(drop, /frame\.getBoundingClientRect\(\)/);
-  assert.match(drop, /screen\.dispatchEvent\(new CustomEvent\('imperfect:drop'/);
-  assert.match(drop, /scale: '\.12', opacity: 0/);
-  assert.match(functionSource(mac, 'move'), /if \(reduced.matches\)/);
+  assert.match(functionSource(mac, 'localRect'), /stage\.width\s*\/\s*SCREEN\.w/);
   assert.match(sequence, /@media \(prefers-reduced-motion: reduce\) \{ :root \{ --fade: 0ms; --handoff: 0ms; --unlock: 0ms; \}/);
+});
+
+// Small event/DOM doubles exercise the actual parent protocol without a browser
+// or a connection to Noah's computer. Only rendering/media dependencies are stubbed.
+class Signals {
+  listeners = new Map();
+  addEventListener(type, fn) { const rows = this.listeners.get(type) || new Set(); rows.add(fn); this.listeners.set(type, rows); }
+  removeEventListener(type, fn) { this.listeners.get(type)?.delete(fn); }
+  emit(type, event = {}) { for (const fn of [...(this.listeners.get(type) || [])]) fn(event); }
+  dispatchEvent(event) { this.emit(event.type, event); return true; }
+}
+class ElementDouble extends Signals {
+  dataset = {}; style = { transform: '', setProperty(name, value) { this[name] = value; } }; attributes = {}; inert = true; hidden = true; textContent = '';
+  classList = { add() {}, remove() {} };
+  children = new Map();
+  querySelector(selector) { if (!this.children.has(selector)) this.children.set(selector, new ElementDouble()); return this.children.get(selector); }
+  setAttribute(name, value) { this.attributes[name] = value; }
+  getAttribute(name) { return name === 'src' ? this.src : this.attributes[name] ?? null; }
+  focus() { this.focused = true; }
+  pause() {} load() {} blur() {}
+}
+async function parentHarness({ reduced = false } = {}) {
+  const elements = new Map(), signals = new Signals(), posts = [], timers = new Map();
+  const el = id => { if (!elements.has(id)) elements.set(id, new ElementDouble()); return elements.get(id); };
+  let bench = null, now = 0, timerID = 0, navigations = 0, src, phoneSrc, phoneNavigations = 0, ticketRequests = 0;
+  const frame = el('computer'), phoneFrame = el('phoneComputer'), phonePosts = [];
+  frame.contentWindow = { postMessage(data, origin) { posts.push({ data: JSON.parse(JSON.stringify(data)), origin }); } };
+  phoneFrame.contentWindow = { postMessage(data, origin) { phonePosts.push({ data: JSON.parse(JSON.stringify(data)), origin }); } };
+  Object.defineProperty(frame, 'src', { get: () => src, set(value) { src = value; navigations++; } });
+  Object.defineProperty(phoneFrame, 'src', { get: () => phoneSrc, set(value) { phoneSrc = value; phoneNavigations++; } });
+  const macCalls = [], mac = {};
+  for (const name of ['prime', 'prepare', 'reveal', 'play', 'finish', 'present', 'live', 'offline']) mac[name] = (...args) => { macCalls.push([name, ...args]); };
+  let callbacks, shopOptions;
+  mac.complete = () => callbacks.onstage('done');
+  mac.state = () => ({});
+  const context = vm.createContext({
+    console, URL, AbortController, CustomEvent, config, demoAddress, isDemoReady, preloadDue, fadeDuration,
+    waitForMedia, primeVideo, playVideo, firstVideoFrame: async () => {},
+    createLock: () => ({ state: 'locked' }), remembered: async () => { ticketRequests++; return bench; }, unlock: async () => null,
+    createMac: options => { callbacks = options; return mac; }, initShell() {}, initShop(options) { shopOptions = options; }, setTrash() {},
+    createFilmLayer: () => ({ stop() {}, start() {}, state: () => ({}), mode: 'plain' }),
+    performance: { now: () => ++now }, matchMedia: () => ({ matches: reduced, addEventListener() {} }),
+    location: { href: 'https://imperfect.computer/' },
+    fetch: async () => ({ ok: false }),
+    setTimeout: fn => { const id = ++timerID; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id),
+    document: Object.assign(new Signals(), { getElementById: el, querySelector: el, body: el('body'), documentElement: el('root'), hidden: false }),
+    addEventListener: signals.addEventListener.bind(signals), dispatchEvent: signals.dispatchEvent.bind(signals),
+  });
+  context.window = context;
+  const text = (await read('launch.mjs')).replace(/^import .*;\n/gm, '').replace(/import\('\.\/intro\/intro\.mjs[^']*'\)/, 'new Promise(() => {})');
+  const phoneSource = (await read('mac/phone.mjs')).replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  vm.runInContext(phoneSource + '\n' + text + '\nwindow.unit = { opened, requestDemo, assemble, finishMac, openComputer };', context);
+  await Promise.resolve(); await Promise.resolve();
+  return {
+    el, frame, phoneFrame, posts, phonePosts, macCalls, timers, api: context.unit,
+    state: () => JSON.parse(JSON.stringify(context.__launch())), navigations: () => navigations,
+    phoneNavigations: () => phoneNavigations, ticketRequests: () => ticketRequests,
+    phone: spoken => callbacks.onphone(spoken),
+    requestShop: url => shopOptions.open(url),
+    setBench(value) { bench = value; },
+    message(data, patch = {}) { signals.emit('message', { data, source: frame.contentWindow, origin: 'https://noah.imperfect.computer', ...patch }); },
+    phoneMessage(data, patch = {}) { signals.emit('message', { data, source: phoneFrame.contentWindow, origin: 'https://noah.imperfect.computer', ...patch }); },
+  };
+}
+const ticket = { id: 'noah', url: 'https://noah.imperfect.computer/door/ticket?t=unit-only' };
+async function loadedParent(options) {
+  const h = await parentHarness(options); h.setBench(ticket); h.api.opened(ticket); await h.api.requestDemo(); return h;
+}
+
+test('parent assembly requires the exact live source/origin and ready type, then monotonic painted acknowledgments', async () => {
+  const h = await loadedParent();
+  assert.equal(h.navigations(), 1); assert.equal(h.el('demoScreen').dataset.visible, 'false');
+  for (const patch of [{ source: {} }, { source: null }, { origin: 'null' }, { origin: 'http://noah.imperfect.computer' },
+    { origin: 'https://sub.noah.imperfect.computer' }, { origin: 'https://noah.imperfect.computer:444' }, { origin: 'https://evil.test' }]) {
+    h.message({ type: 'imperfect:demo-ready' }, patch); h.message({ type: 'imperfect:assembled', step: 'bare' }, patch);
+  }
+  for (const type of ['load', 'ready', 'imperfect:assembled', 'imperfect:assemble']) h.message({ type, step: 'bare' });
+  assert.equal(h.state().demoVerified, false); assert.equal(h.posts.length, 0);
+  h.frame.emit('load');
+  assert.equal(h.state().demoVerified, false, 'load is not the handshake');
+  h.message({ type: 'imperfect:demo-ready' });
+  assert.deepEqual(h.posts, [{ data: { type: 'imperfect:assemble', step: 'bare' }, origin: 'https://noah.imperfect.computer' }]);
+  assert.equal(h.el('demoScreen').dataset.visible, 'false', 'ready without painted bare is not visible');
+  h.message({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.state().assembly.painted, null, 'unsolicited future acknowledgment is rejected');
+  h.message({ type: 'imperfect:assembled', step: 'bare' });
+  assert.equal(h.el('demoScreen').dataset.visible, 'true'); assert.equal(h.el('demoScreen').inert, true);
+  const waiting = h.api.assemble('claude');
+  for (const patch of [{ source: {} }, { origin: 'https://evil.test' }]) h.message({ type: 'imperfect:assembled', step: 'claude' }, patch);
+  h.message({ type: 'imperfect:assemble', step: 'claude' });
+  h.message({ type: 'imperfect:assembled', step: 'codex' });
+  assert.equal(h.state().assembly.painted, 'bare');
+  h.message({ type: 'imperfect:assembled', step: 'claude' }); assert.equal(await waiting, true);
+  const count = h.posts.length;
+  assert.equal(await h.api.assemble('bare'), false); assert.equal(await h.api.assemble('kinso'), false);
+  assert.equal(h.posts.length, count);
+  h.message({ type: 'imperfect:assembled', step: 'bare' });
+  assert.equal(h.state().assembly.painted, 'claude', 'late paint cannot regress');
+  const done = h.api.assemble('done'); h.message({ type: 'imperfect:assembled', step: 'done' }); await done;
+  await h.api.finishMac();
+  assert.equal(h.state().phase, 'demo'); assert.equal(h.el('demoScreen').inert, false);
+  assert.equal(h.navigations(), 1, 'bare through done never swaps or reloads the frame');
+  assert.ok(h.state().assembly.history.every(row => row.paintedAt >= row.sentAt));
+});
+
+test('the parent loads the phone only after primary authentication, never spends another ticket, and isolates both handshakes', async () => {
+  const h = await loadedParent(), requests = h.ticketRequests();
+  assert.equal(h.phoneNavigations(), 0, 'the primary cookie must be established before phone navigation');
+  h.message({ type: 'imperfect:demo-ready' }, { source: {} }); assert.equal(h.phoneNavigations(), 0);
+  h.message({ type: 'imperfect:demo-ready' });
+  assert.equal(h.phoneNavigations(), 1);
+  assert.equal(h.phoneFrame.src, 'https://noah.imperfect.computer/?face=code&launch=phone');
+  assert.equal(h.ticketRequests(), requests, 'the second document uses the existing origin cookie, not remembered/unlock again');
+  const primaryPosts = h.posts.length;
+  h.phoneMessage({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.state().phone.ready, false);
+  h.phoneMessage({ type: 'imperfect:demo-ready' }, { source: h.frame.contentWindow, origin: 'https://evil.test' });
+  assert.equal(h.state().phone.verified, false);
+  h.phoneMessage({ type: 'imperfect:demo-ready' });
+  assert.deepEqual(h.phonePosts, [{ data: { type: 'imperfect:assemble', step: 'done' }, origin: 'https://noah.imperfect.computer' }]);
+  assert.equal(h.posts.length, primaryPosts, 'phone readiness cannot resend or advance primary assembly');
+  h.phoneMessage({ type: 'imperfect:assembled', step: 'done' }, { source: h.frame.contentWindow });
+  assert.equal(h.state().phone.ready, false);
+  h.phoneMessage({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.state().phone.ready, true);
+  assert.equal(h.state().assembly.painted, null, 'a phone paint can never stand in for the desktop paint');
+  h.message({ type: 'imperfect:assembled', step: 'bare' });
+  const done = h.api.assemble('done'); h.message({ type: 'imperfect:assembled', step: 'done' }); await done; await h.api.finishMac();
+  assert.equal(h.el('demoScreen').inert, false); assert.equal(h.phoneFrame.inert, true, 'done enables only the desktop document');
+  assert.equal(h.navigations(), 1); assert.equal(h.phoneNavigations(), 1); assert.equal(h.ticketRequests(), requests);
+  assert.ok([...h.posts, ...h.phonePosts].every(row => row.data.type === 'imperfect:assemble'), 'the parent never sends tab-new or prompt commands to either document');
+});
+
+test('the minimal Shop bridge carries the visitor OS rather than the hosted computer OS', async () => {
+  const source = (await read('shop.mjs')).replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  const context = vm.createContext({ URL });
+  vm.runInContext(source + '\nglobalThis.shopURL = visitorShopURL; globalThis.shopInit = initShop;', context);
+  for (const [visitor, os] of [
+    [{ platform: 'MacIntel' }, 'mac'], [{ userAgentData: { platform: 'macOS' } }, 'mac'],
+    [{ platform: 'Linux x86_64' }, 'linux'], [{ platform: 'Win32' }, 'windows'],
+    [{ userAgent: 'Mozilla/5.0 (iPhone)' }, 'mobile'], [{ platform: 'MacIntel', maxTouchPoints: 5 }, 'mobile'],
+    [{ userAgentData: { platform: 'Android', mobile: true } }, 'mobile'],
+  ]) {
+    assert.equal(context.shopURL(visitor), `https://imperfect.computer/shop?os=${os}`);
+    assert.equal(detectOS(visitor), os, 'the independent launch bridge and public store agree on visitor OS names');
+  }
+  const win = new Signals(), calls = []; win.navigator = { platform: 'MacIntel' };
+  const bridge = context.shopInit({ win, restore: () => calls.push('restore'), open: url => calls.push(url) });
+  win.emit('mac:shop');
+  assert.deepEqual(calls, ['restore'], 'the main window restores before sending into its product');
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['restore', 'https://imperfect.computer/shop?os=mac']);
+  bridge.dispose(); win.emit('mac:shop'); await new Promise(setImmediate);
+  assert.equal(calls.length, 2, 'disposing the bridge removes the menu handler');
+});
+
+test('Shop opens only in the authenticated primary product after done, never in the phone or another window', async () => {
+  const h = await loadedParent();
+  const url = 'https://imperfect.computer/shop?os=mac';
+  const opens = () => h.posts.filter(row => row.data.type === 'imperfect:open');
+  h.frame.emit('load');
+  h.requestShop(url); await new Promise(setImmediate);
+  assert.equal(opens().length, 0, 'an unverified primary cannot receive Shop');
+  h.phoneMessage({ type: 'imperfect:demo-ready' });
+  h.phoneMessage({ type: 'imperfect:assembled', step: 'done' });
+  await new Promise(setImmediate);
+  assert.equal(opens().length, 0, 'phone authentication and paint cannot authorise primary browser commands');
+  h.message({ type: 'imperfect:demo-ready' });
+  h.message({ type: 'imperfect:assembled', step: 'bare' });
+  h.requestShop(url); await new Promise(setImmediate);
+  assert.equal(opens().length, 0, 'bare is not the finished interactive product');
+  const done = h.api.assemble('done'); h.message({ type: 'imperfect:assembled', step: 'done' }); await done;
+  await h.api.finishMac(); await new Promise(setImmediate);
+  const before = opens().length, phonePosts = h.phonePosts.length;
+  await h.requestShop(url);
+  assert.equal(opens().length, before + 1);
+  assert.deepEqual(opens().at(-1), { data: { type: 'imperfect:open', url }, origin: 'https://noah.imperfect.computer' });
+  await h.requestShop(url);
+  assert.equal(opens().length, before + 2, 'each explicit menu request can foreground the same Shop tab');
+  assert.equal(h.phonePosts.length, phonePosts, 'Shop never sends an open command to the inert phone document');
+  assert.equal(h.navigations(), 1, 'Shop does not replace or reload the authenticated product iframe');
+  h.frame.emit('load');
+  const previous = opens().length;
+  h.requestShop(url); await new Promise(setImmediate);
+  assert.equal(opens().length, previous, 'navigation revokes permission to open Shop until readiness and done are earned again');
+});
+
+test('live navigation/error revokes readiness; Retry reauthenticates the same frame and cannot switch computers', async () => {
+  const h = await loadedParent(), sameFrame = h.frame;
+  h.frame.emit('load'); h.message({ type: 'imperfect:demo-ready' }); h.message({ type: 'imperfect:assembled', step: 'bare' });
+  h.frame.emit('load');
+  assert.equal(h.state().demoVerified, false); assert.equal(h.state().assembly.painted, null);
+  assert.equal(h.el('demoScreen').dataset.visible, 'false');
+  h.message({ type: 'imperfect:assembled', step: 'bare' }); assert.equal(h.state().assembly.painted, null);
+  await h.api.finishMac(); assert.ok(h.macCalls.some(([name]) => name === 'offline'));
+  h.frame.emit('error'); assert.equal(h.el('demoScreen').dataset.visible, 'false');
+  h.el('macRetry').emit('click'); await new Promise(setImmediate);
+  assert.equal(h.navigations(), 2); assert.equal(h.el('computer'), sameFrame);
+  assert.equal(h.state().demoVerified, false, 'retry navigation must earn a fresh handshake and paint');
+  h.setBench({ ...ticket, id: 'someone-else' }); await h.api.requestDemo();
+  assert.equal(h.navigations(), 2, 'remembered cookie cannot redirect a ticket to a different computer');
+});
+
+test('a verified document with a timed-out done paint exposes live Retry instead of silently stranding the build', async () => {
+  const h = await loadedParent();
+  h.message({ type: 'imperfect:demo-ready' }); h.message({ type: 'imperfect:assembled', step: 'bare' });
+  const waiting = h.api.assemble('done');
+  [...h.timers.values()].at(-1)();
+  assert.equal(await waiting, false, 'simulate the bounded assembly timeout, not a failed origin check');
+  await h.api.finishMac();
+  assert.ok(h.macCalls.some(([name]) => name === 'offline'), 'missing done paint needs the honest Retry fallback even when ready was verified');
+  assert.notEqual(h.state().phase, 'demo');
+  h.message({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.state().phase, 'demo', 'a late authenticated paint recovers on the same document');
+  assert.equal(h.navigations(), 1);
+});
+
+test('keyboard skip requests done on the same frame, while reduced motion starts with done', async () => {
+  const h = await loadedParent();
+  h.message({ type: 'imperfect:demo-ready' });
+  let prevented = false;
+  h.el('skip').emit('click', { preventDefault() { prevented = true; } });
+  await Promise.resolve();
+  assert.equal(prevented, true); assert.equal(h.state().assembly.desired, 'done');
+  assert.equal(h.posts.at(-1).data.step, 'done');
+  h.message({ type: 'imperfect:assembled', step: 'done' });
+  await new Promise(setImmediate);
+  assert.equal(h.state().phase, 'demo'); assert.equal(h.navigations(), 1);
+  const reduced = await loadedParent({ reduced: true });
+  reduced.message({ type: 'imperfect:demo-ready' });
+  assert.equal(reduced.posts[0].data.step, 'done');
+  assert.equal(reduced.phoneNavigations(), 0, 'reduced motion never loads the unused phone document');
+  const initiallySkipped = await loadedParent();
+  initiallySkipped.el('skip').emit('click', { preventDefault() {} });
+  initiallySkipped.message({ type: 'imperfect:demo-ready' });
+  assert.equal(initiallySkipped.posts[0].data.step, 'done');
+  initiallySkipped.message({ type: 'imperfect:assembled', step: 'done' });
+  await new Promise(setImmediate);
+  assert.equal(initiallySkipped.state().phase, 'demo');
+  assert.equal(initiallySkipped.phoneNavigations(), 0, 'an initial skip does not load the unused phone document');
+});
+
+async function phoneHarness({ reduced = false } = {}) {
+  let now = 0, nextTimer = 0, src, navigations = 0;
+  const signals = new Signals(), stage = new ElementDouble(), device = new ElementDouble(), frame = new ElementDouble(), appWindow = new ElementDouble();
+  const timers = new Map(), posts = [], events = [];
+  appWindow.style.transform = 'translateY(7px)';
+  frame.contentWindow = { postMessage(data, origin) { posts.push({ data: JSON.parse(JSON.stringify(data)), origin }); } };
+  Object.defineProperty(frame, 'src', { get: () => src, set(value) { src = value; navigations++; } });
+  stage.addEventListener('imperfect:phone', event => events.push(JSON.parse(JSON.stringify(event.detail))));
+  const context = vm.createContext({ URL, CustomEvent, AbortController, demoAddress, isDemoReady,
+    performance: { now: () => now }, addEventListener: signals.addEventListener.bind(signals),
+    setTimeout: (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, at: now + ms }); return id; },
+    clearTimeout: id => timers.delete(id), stage, device, frame, appWindow, reduced: { matches: reduced },
+  });
+  const text = (await read('mac/phone.mjs')).replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  vm.runInContext(text + '\nglobalThis.phone = createPhone({ stage, device, frame, appWindow, reduced });', context);
+  return { phone: context.phone, stage, device, frame, appWindow, posts, events,
+    navigations: () => navigations,
+    message(data, patch = {}) { signals.emit('message', { data, source: frame.contentWindow, origin: 'https://noah.imperfect.computer', ...patch }); },
+    async tick(ms) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]); now = due[1].at; due[1].fn();
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+      }
+      now = end;
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    },
+  };
+}
+
+test('the real phone frame reuses the primary origin cookie and earns its own exact-source ready and done paint', async () => {
+  const h = await phoneHarness();
+  h.phone.prepare('https://noah.imperfect.computer');
+  assert.equal(h.frame.src, 'https://noah.imperfect.computer/?face=code&launch=phone');
+  assert.equal(new URL(h.frame.src).searchParams.has('t'), false, 'no second ticket or credential in the phone URL');
+  assert.equal(h.frame.inert, true);
+  h.frame.emit('load');
+  h.message({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.phone.state().ready, false, 'paint before the exact ready handshake cannot enable the phone');
+  for (const patch of [{ source: {} }, { source: null }, { origin: 'null' }, { origin: 'https://evil.test' },
+    { origin: 'http://noah.imperfect.computer' }, { origin: 'https://sub.noah.imperfect.computer' }, { origin: 'https://noah.imperfect.computer:444' }]) {
+    h.message({ type: 'imperfect:demo-ready' }, patch);
+    h.message({ type: 'imperfect:assembled', step: 'done' }, patch);
+  }
+  assert.equal(h.phone.state().verified, false); assert.equal(h.posts.length, 0);
+  h.message({ type: 'imperfect:demo-ready' });
+  assert.deepEqual(h.posts, [{ data: { type: 'imperfect:assemble', step: 'done' }, origin: 'https://noah.imperfect.computer' }]);
+  for (const step of ['bare', 'browser', 'phone', null]) h.message({ type: 'imperfect:assembled', step });
+  assert.equal(h.phone.state().ready, false);
+  h.message({ type: 'imperfect:assembled', step: 'done' }, { source: {} });
+  assert.equal(h.phone.state().ready, false);
+  h.message({ type: 'imperfect:assembled', step: 'done' });
+  assert.equal(h.phone.state().ready, true); assert.equal(h.frame.inert, true, 'paint never enables input in the phone');
+  h.phone.prepare('https://noah.imperfect.computer'); assert.equal(h.navigations(), 1, 'exhibiting it again reuses the same authenticated document');
+  h.frame.emit('load');
+  assert.equal(h.phone.state().verified, false); assert.equal(h.phone.state().ready, false);
+  h.message({ type: 'imperfect:assembled', step: 'done' }); assert.equal(h.phone.state().ready, false, 'navigation revokes readiness');
+  h.message({ type: 'imperfect:demo-ready' }); h.message({ type: 'imperfect:assembled', step: 'done' });
+  h.frame.emit('error'); assert.equal(h.phone.state().ready, false, 'network errors expose the honest fallback');
+});
+
+test('the phone slides for 600 ms each way, holds until its voice plus one second, and exactly restores the desktop', async () => {
+  const h = await phoneHarness(), original = h.appWindow.style.transform, sameFrame = h.frame;
+  let finishVoice;
+  const spoken = { done: new Promise(resolve => { finishVoice = resolve; }) };
+  const exhibit = h.phone.exhibit(spoken);
+  assert.equal(h.appWindow.style.transform, original + ' translateX(-320px)');
+  await h.tick(599); assert.equal(h.events.length, 0);
+  await h.tick(1); assert.deepEqual(h.events.map(row => [row.phase, row.at]), [['shown', 600]]);
+  await h.tick(1300); assert.equal(h.events.length, 1, 'a still-playing voice cannot be cut off');
+  finishVoice(); await h.tick(0);
+  await h.tick(999); assert.equal(h.device.dataset.shown, 'true');
+  await h.tick(1); assert.equal(h.device.dataset.shown, 'exit'); assert.equal(h.appWindow.style.transform, original);
+  await h.tick(599); assert.equal(h.events.length, 1);
+  await h.tick(1); await exhibit;
+  assert.deepEqual(h.events.map(row => [row.phase, row.at]), [['shown', 600], ['returned', 3500]]);
+  assert.equal(h.appWindow.style.transform, original); assert.equal(h.device.dataset.shown, 'false');
+  assert.equal(h.phone.state().returned, true); assert.equal(h.frame, sameFrame); assert.equal(h.navigations(), 0, 'sliding never reloads or attaches another product');
+});
+
+test('skip during the phone slide or voice hold restores immediately; reduced motion never loads or slides it', async () => {
+  for (const skipAt of [300, 800]) {
+    const h = await phoneHarness(), original = h.appWindow.style.transform;
+    const exhibit = h.phone.exhibit({ done: new Promise(() => {}) });
+    await h.tick(skipAt); const before = h.events.length;
+    h.phone.reset(); await h.tick(0); await exhibit;
+    assert.equal(h.appWindow.style.transform, original); assert.equal(h.device.dataset.shown, 'false');
+    await h.tick(5000); assert.equal(h.events.length, before, 'cancelled slide/hold cannot publish late shown/returned events');
+  }
+  const reduced = await phoneHarness({ reduced: true }), original = reduced.appWindow.style.transform;
+  reduced.phone.prepare('https://noah.imperfect.computer');
+  await reduced.phone.exhibit({ done: Promise.resolve() });
+  assert.equal(reduced.navigations(), 0); assert.equal(reduced.events.length, 0);
+  assert.equal(reduced.phone.state().played, false); assert.equal(reduced.appWindow.style.transform, original);
+});
+
+test('product assembly is framed-only, cumulative, exact-origin/source, and acknowledges only after two frames', () => {
+  function product({ origin = 'https://noah.imperfect.computer', referrer = 'https://imperfect.computer/', standalone = false, search = '' } = {}) {
+    const classes = [], win = new Signals(), doc = { referrer, documentElement: { classList: { add(name) { classes.push(name); } } } }, frames = [], posts = [], applied = [];
+    win.location = { origin, search }; win.parent = standalone ? win : { postMessage: (data, target) => posts.push({ data, target }) };
+    win.requestAnimationFrame = fn => frames.push(fn);
+    const mount = mountAssembly({ win, doc, apply: step => applied.push(step) });
+    return { win, doc, classes, mount, posts, applied, frame() { for (const fn of frames.splice(0)) fn(); },
+      send(step, patch = {}) { win.emit('message', { source: win.parent, origin: 'https://imperfect.computer', data: { type: 'imperfect:assemble', step }, ...patch }); } };
+  }
+  assert.deepEqual([...ASSEMBLY_STEPS], ['bare', 'claude', 'codex', 'files', 'browser', 'done']);
+  for (const options of [{ standalone: true }, { origin: 'https://private.test' }, { referrer: 'https://evil.test/' }, { referrer: 'https://imperfect.computer.evil.test/' }]) {
+    const p = product(options); assert.equal(p.mount, null); p.send('done'); assert.deepEqual(p.applied, []);
+  }
+  const p = product();
+  for (const patch of [{ source: {} }, { source: null }, { origin: 'null' }, { origin: 'http://imperfect.computer' }, { origin: 'https://sub.imperfect.computer' },
+    { origin: 'https://imperfect.computer:444' }, { data: { type: 'imperfect:assembled', step: 'bare' } }, { data: null }]) p.send('bare', patch);
+  for (const step of ['s-live', 'kinso', -1, {}, null]) p.send(step);
+  assert.deepEqual(p.applied, []);
+  for (const step of ASSEMBLY_STEPS) {
+    p.send(step); assert.equal(p.posts.length, p.applied.length - 1);
+    p.frame(); assert.equal(p.posts.length, p.applied.length - 1, 'not before the second animation frame');
+    p.frame(); assert.deepEqual(p.posts.at(-1), { data: { type: 'imperfect:assembled', step }, target: 'https://imperfect.computer' });
+    p.send('bare');
+  }
+  assert.deepEqual(p.applied, [...ASSEMBLY_STEPS], 'late messages never reapply or regress the product');
+  const phone = product({ search: '?face=code&launch=phone' });
+  assert.deepEqual(phone.classes, ['launch-phone'], 'the real phone layout does not receive the desktop launch inset');
+  assert.equal(phoneByLaunch(phone.win, phone.doc), true);
+  assert.equal(mountLaunchDrag({ win: phone.win, doc: phone.doc }), null, 'the phone cannot drag the desktop window');
+  phone.send('done', { source: {} }); phone.send('done', { origin: 'https://evil.test' });
+  assert.deepEqual(phone.applied, []);
+  phone.send('done'); phone.frame(); assert.equal(phone.posts.length, 0); phone.frame();
+  assert.deepEqual(phone.applied, ['done']);
+  assert.deepEqual(phone.posts, [{ data: { type: 'imperfect:assembled', step: 'done' }, target: 'https://imperfect.computer' }]);
+  for (const options of [{ standalone: true }, { origin: 'https://private.test' }, { referrer: 'https://evil.test/' }]) {
+    const untrusted = product({ ...options, search: '?launch=phone' });
+    assert.equal(phoneByLaunch(untrusted.win, untrusted.doc), false, 'a query parameter cannot cross the trusted launch boundary');
+    assert.deepEqual(untrusted.classes, []);
+  }
+  assert.deepEqual(p.classes, ['launch-framed'], 'the primary document remains a native desktop');
+  const skip = product(); skip.send('done'); skip.frame(); skip.frame();
+  assert.deepEqual(skip.applied, ['done'], 'done first simply shows the completed product');
+  skip.send('files'); skip.frame(); skip.frame(); assert.equal(skip.posts.length, 1);
+  const superseded = product(); superseded.send('bare'); superseded.send('codex'); superseded.frame(); superseded.frame();
+  assert.deepEqual(superseded.posts.map(row => row.data.step), ['codex'], 'superseded paint cannot claim an earlier appearance');
+  superseded.mount.dispose(); superseded.send('done'); assert.deepEqual(superseded.applied, ['bare', 'codex']);
+});
+
+const officialShop = 'https://imperfect.computer/shop';
+const invalidShopURLs = [null, {}, 1, '', '/shop', 'http://imperfect.computer/shop', 'https://evil.test/shop',
+  'https://imperfect.computer.evil.test/shop', 'https://sub.imperfect.computer/shop',
+  'https://imperfect.computer:443/shop', 'https://imperfect.computer:444/shop',
+  'https://user@imperfect.computer/shop', 'https://user:pass@imperfect.computer/shop',
+  `${officialShop}/`, `${officialShop}/thanks`, `${officialShop}#`, `${officialShop}#install`, `${officialShop}?`,
+  `${officialShop}?os=`, `${officialShop}?os=macos`, `${officialShop}?os=phone`, `${officialShop}?os=MAC`,
+  `${officialShop}?os=mac&os=mac`, `${officialShop}?os=mac&os=linux`, `${officialShop}?x=mac`, `${officialShop}?os=mac&x=1`,
+  `${officialShop}?%6fs=mac`, `${officialShop}?os=%6dac`, ` ${officialShop}`, `${officialShop}\n`,
+  'https://imperfect.computer/other/../shop', 'javascript:alert(1)', 'data:text/html,shop'];
+test('the product accepts only the exact official Shop URL and at most one validated visitor OS', () => {
+  assert.equal(launchShopURL(officialShop), officialShop);
+  for (const os of ['mac', 'linux', 'windows', 'mobile']) assert.equal(launchShopURL(`${officialShop}?os=${os}`), `${officialShop}?os=${os}`);
+  for (const url of invalidShopURLs) assert.equal(launchShopURL(url), null, `reject ${String(url)}`);
+});
+
+test('Shop messages require the exact framed parent, a finished primary document and a valid URL; phone never mounts them', async () => {
+  function product({ origin = 'https://noah.imperfect.computer', referrer = 'https://imperfect.computer/', standalone = false, search = '' } = {}) {
+    const win = new Signals(), doc = { referrer }, opened = [];
+    let ready = false, release;
+    win.location = { origin, search }; win.parent = standalone ? win : {};
+    const mount = mountLaunchOpen({ win, doc, canOpen: () => ready,
+      open: url => { opened.push(url); return new Promise(resolve => { release = resolve; }); } });
+    return { mount, opened, ready: () => { ready = true; }, release: () => release?.(),
+      send(url = officialShop, patch = {}) { win.emit('message', { source: win.parent, origin: 'https://imperfect.computer', data: { type: 'imperfect:open', url }, ...patch }); } };
+  }
+  for (const options of [{ standalone: true }, { origin: 'https://private.test' }, { referrer: 'https://evil.test/' },
+    { referrer: 'https://imperfect.computer.evil.test/' }, { search: '?face=code&launch=phone' }]) {
+    const p = product(options); assert.equal(p.mount, null); p.ready(); p.send(); await new Promise(setImmediate); assert.deepEqual(p.opened, []);
+  }
+  const p = product();
+  p.send(); await new Promise(setImmediate); assert.deepEqual(p.opened, [], 'the parent cannot open a browser before primary done');
+  p.ready();
+  for (const patch of [{ source: {} }, { source: null }, { origin: 'null' }, { origin: 'http://imperfect.computer' },
+    { origin: 'https://sub.imperfect.computer' }, { origin: 'https://imperfect.computer:444' },
+    { data: null }, { data: { type: 'imperfect:opened', url: officialShop } }]) p.send(officialShop, patch);
+  for (const url of invalidShopURLs) p.send(url);
+  await new Promise(setImmediate); assert.deepEqual(p.opened, [], 'invalid messages cannot reach the browser transport');
+  p.send(`${officialShop}?os=mac`); p.send(`${officialShop}?os=mac`);
+  await new Promise(setImmediate); assert.deepEqual(p.opened, [`${officialShop}?os=mac`], 'a pending open is not duplicated');
+  p.release(); await new Promise(setImmediate);
+  p.send(); await new Promise(setImmediate); assert.deepEqual(p.opened, [`${officialShop}?os=mac`, officialShop], 'a later menu click can foreground it again');
+  p.release(); await new Promise(setImmediate); p.mount.dispose(); p.send(); await new Promise(setImmediate);
+  assert.equal(p.opened.length, 2, 'disposed document handlers cannot open anything');
+});
+
+test('Shop reuses the real browser tabs/open/front transport, including an existing receipt tab', async () => {
+  const calls = [], tabs = [{ tab: 101, url: 'https://www.google.com/' }], remember = { tab: null };
+  const ask = async command => {
+    calls.push({ ...command });
+    if (command.do === 'tabs') return { tabs };
+    if (command.do === 'open') {
+      let tab = tabs.find(tab => tab.tab === command.tab);
+      if (!tab) { tab = { tab: 102 }; tabs.push(tab); }
+      tab.url = command.url; return { ...tab };
+    }
+    if (command.do === 'front') return { ok: true };
+    assert.fail(`unexpected browser command ${command.do}`);
+  };
+  assert.equal(await prepareLaunchShop(ask, `${officialShop}?os=mac`, remember), 102);
+  assert.deepEqual(calls, [{ do: 'tabs' }, { do: 'open', url: `${officialShop}?os=mac` }, { do: 'front', tab: 102 }]);
+  calls.length = 0;
+  await prepareLaunchShop(ask, `${officialShop}?os=mac`, remember);
+  assert.deepEqual(calls, [{ do: 'tabs' }, { do: 'front', tab: 102 }], 'reopening only foregrounds the one existing Shop tab');
+  tabs[1].url = `${officialShop}/thanks?session=cs_test_unit&os=mac`;
+  calls.length = 0;
+  await prepareLaunchShop(ask, `${officialShop}?os=linux`, { tab: null });
+  assert.deepEqual(calls, [{ do: 'tabs' }, { do: 'open', url: `${officialShop}?os=linux`, tab: 102 }, { do: 'front', tab: 102 }], 'a receipt tab is reused, not accumulated');
+  assert.equal(tabs.length, 2); assert.equal(tabs[0].url, 'https://www.google.com/');
+  calls.length = 0;
+  await assert.rejects(prepareLaunchShop(ask, 'https://evil.test/shop'), /Only the public Shop/);
+  assert.deepEqual(calls, [], 'URL validation happens before any browser request');
+  await assert.rejects(prepareLaunchShop(async () => ({ tabs: null }), officialShop), /tabs/);
+  await assert.rejects(prepareLaunchShop(async () => ({ tabs: [{ tab: -1, url: officialShop }] }), officialShop), /tab/);
+});
+
+test('window-drag messages require the actual iframe document, exact origin, finite coordinates and a known phase', () => {
+  const frame = { contentWindow: {}, getAttribute: () => ticket.url };
+  const valid = { source: frame.contentWindow, origin: 'https://noah.imperfect.computer', data: { type: 'imperfect:window-drag', phase: 'start', x: 80, y: 20 } };
+  assert.equal(frameDragAllowed(valid, frame), true);
+  for (const phase of ['start', 'move', 'end']) assert.equal(frameDragAllowed({ ...valid, data: { ...valid.data, phase } }, frame), true);
+  for (const patch of [{ source: {} }, { origin: 'null' }, { origin: 'https://sub.noah.imperfect.computer' }, { origin: 'https://evil.test' },
+    ...[{ type: 'imperfect:assembled' }, { phase: 'resize' }, { x: NaN }, { x: Infinity }, { y: '20' }, { x: 100001 }].map(data => ({ data: { ...valid.data, ...data } }))]) {
+    assert.equal(frameDragAllowed({ ...valid, ...patch }, frame), false);
+  }
+  for (const src of ['', 'javascript:alert(1)', 'data:text/html,x']) assert.equal(frameDragAllowed(valid, { ...frame, getAttribute: () => src }, 'https://imperfect.computer/'), false);
+});
+
+async function desktopHarness({ width = 1600, height = 900, reduced = false } = {}) {
+  let now = 0;
+  const ledger = [], scale = Math.min(width / 1600, height / 900), left = (width - 1600 * scale) / 2, top = (height - 900 * scale) / 2;
+  const rect = (x, y, w, h) => ({ left: left + x * scale, top: top + y * scale, width: w * scale, height: h * scale });
+  const make = () => Object.assign(new ElementDouble(), {
+    classList: { add() {} }, remove() {}, cloneNode: () => make(),
+    animate: () => ({ finished: Promise.resolve() }),
+  });
+  const frame = make(), cursor = make(), offline = make(), shield = make(), screen = make(), tiles = new Map();
+  frame.getBoundingClientRect = () => rect(160, 25, 1280, 796);
+  screen.getBoundingClientRect = () => rect(0, 0, 1600, 900);
+  const names = ['finder', 'safari', 'claude', 'chatgpt', 'imperfect', 'final-cut', 'imovie', 'notes', 'trash'];
+  for (const [i, name] of names.entries()) {
+    const tile = make(), icon = make(); icon.getBoundingClientRect = () => rect(220 + i * 80, 820, 64, 64);
+    tile.querySelector = () => icon; tile.classList.add = value => ledger.push({ type: 'consume', name, value, at: now }); tiles.set(name, tile);
+  }
+  screen.querySelector = selector => selector === '#computer' ? frame : selector === '.mac-cursor' ? cursor : selector === '.mac-offline' ? offline : selector === '.mac-build-shield' ? shield : tiles.get(selector.match(/data-app="([^"]+)"/)?.[1]);
+  screen.querySelectorAll = () => []; screen.append = () => {};
+  screen.addEventListener('imperfect:drop', event => ledger.push({ type: 'event', ...event.detail }));
+  class AudioDouble extends Signals {
+    time = 0; ended = false;
+    set currentTime(value) { this.time = value; this.ended = false; }
+    get currentTime() {
+      const duration = [INTRO, ...STEPS].find(line => line.voice === this.src)?.durationMs / 1000;
+      this.time = Math.min(duration, this.time + duration / 20);
+      if (this.time >= duration && !this.ended) { this.ended = true; queueMicrotask(() => this.emit('ended')); }
+      return this.time;
+    }
+    play() {
+      ledger.push({ type: this.src.endsWith('drag-to-trash.m4a') ? 'sound' : 'voice', src: this.src, rate: this.playbackRate, at: now });
+      // Spoken flights advance on their own audio-clock reads; the intro/end
+      // have no flight and finish independently, as a media element would.
+      if (this.src === INTRO.voice || this.src === STEPS.at(-1).voice || STEPS.find(line => line.voice === this.src)?.phone) queueMicrotask(() => this.emit('ended'));
+      return Promise.resolve();
+    }
+    pause() {}
+  }
+  const context = vm.createContext({ Audio: AudioDouble, CustomEvent, innerWidth: width, innerHeight: height,
+    performance: { now: () => now }, addEventListener() {},
+    requestAnimationFrame: fn => queueMicrotask(() => { now += 1000; fn(now); }),
+    setTimeout: () => 1, clearTimeout() {}, document: { createElement: make, body: make() },
+  });
+  vm.runInContext((await read('mac/desktop.mjs')).replace(/^export /gm, '') + '\nglobalThis.makeMac = createMac;', context);
+  let mac;
+  mac = context.makeMac({ screen, curtain: make(), reduced: { matches: reduced },
+    onstage: step => ledger.push({ type: 'stage', step, at: now }),
+    ontrash: items => ledger.push({ type: 'trash', items: [...items], at: now }),
+    onphone: async spoken => { ledger.push({ type: 'phone', reset: !spoken, at: now }); await spoken?.done; },
+    onfinish: () => { ledger.push({ type: 'finish', at: now }); mac.finish(); },
+  });
+  return { mac, ledger, screen, frame, cursor, scale };
+}
+
+test('each real drop plays exactly one sound and sends its step in the same task, with three separate Trash drops', async () => {
+  const h = await desktopHarness(); h.mac.prepare(); await h.mac.play();
+  const events = h.ledger.filter(row => row.type === 'event'), sounds = h.ledger.filter(row => row.type === 'sound');
+  assert.deepEqual(events.map(row => [row.name, row.step, Boolean(row.trash)]), [
+    ['claude', 'claude', false], ['chatgpt', 'codex', false], ['finder', 'files', false], ['safari', 'browser', false],
+    ['final-cut', null, true], ['imovie', null, true], ['notes', null, true],
+  ]);
+  assert.equal(sounds.length, events.length, 'one existing drop sound per physical drop, no extras');
+  for (const [i, event] of events.entries()) {
+    assert.equal(sounds[i].at, event.at, `${event.name}: sound on the drop frame`);
+    if (event.step) {
+      const stage = h.ledger.find(row => row.type === 'stage' && row.step === event.step);
+      assert.equal(stage.at, event.at, `${event.name}: product protocol in the same task as the sound`);
+      const index = h.ledger.indexOf(sounds[i]); assert.equal(h.ledger[index + 1], stage, 'no asynchronous hold between drop sound and protocol');
+    }
+  }
+  assert.deepEqual(h.ledger.filter(row => row.type === 'stage').map(row => row.step), ['bare', 'claude', 'codex', 'files', 'browser', 'done']);
+  assert.deepEqual(h.ledger.filter(row => row.type === 'voice').map(row => row.src), [INTRO, ...STEPS].map(row => row.voice));
+  assert.ok(h.ledger.filter(row => row.type === 'voice').every(row => row.rate === .8));
+  assert.deepEqual(h.ledger.filter(row => row.type === 'trash').map(row => row.items), [['final-cut'], ['final-cut', 'imovie'], ['final-cut', 'imovie', 'notes']]);
+  const phoneIndex = h.ledger.findIndex(row => row.type === 'phone' && !row.reset);
+  const browserIndex = h.ledger.findIndex(row => row.type === 'event' && row.step === 'browser');
+  const trashIndex = h.ledger.findIndex(row => row.type === 'event' && row.trash);
+  assert.ok(browserIndex < phoneIndex && phoneIndex < trashIndex, 'the phone is a narration beat after the browser and before Trash, not a product assembly step');
+  assert.equal(h.ledger.filter(row => row.type === 'phone' && !row.reset).length, 1);
+  assert.equal(h.ledger.at(-1).type, 'finish');
+  assert.equal(h.mac.state().finished, true); assert.equal(h.cursor.hidden, true);
+  assert.deepEqual([...h.mac.state().absorbed], ['claude', 'chatgpt', 'finder', 'safari']);
+  assert.deepEqual([...h.mac.state().trashed], ['final-cut', 'imovie', 'notes']);
+});
+
+test('portrait and landscape phones keep native pointer/drop geometry and the same iframe', async () => {
+  for (const [width, height] of [[1600, 900], [390, 844], [844, 390]]) {
+    const h = await desktopHarness({ width, height }), frame = h.frame;
+    h.mac.prepare(); assert.equal(Number(h.screen.style['--scale']), h.scale);
+    await h.mac.play();
+    const event = h.ledger.find(row => row.type === 'event' && row.name === 'claude');
+    const left = (width - 1600 * h.scale) / 2, top = (height - 900 * h.scale) / 2;
+    assert.ok(Math.abs((event.x - left) / h.scale - (160 + 1280 * .47)) < 1e-8);
+    assert.ok(Math.abs((event.y - top) / h.scale - (25 + 796 * .48)) < 1e-8);
+    assert.equal(h.frame, frame); assert.equal(h.frame.src, undefined, 'the desktop choreographer never navigates the product');
+  }
+});
+
+test('Trash flights land even when audio advances beyond the next boundary during pointer travel', async () => {
+  const text = await read('mac/desktop.mjs');
+  for (const [from, to] of [[1, 2 / 3], [1, 1]]) {
+    const frames = [], points = [];
+    const context = vm.createContext({
+      requestAnimationFrame: fn => frames.push(fn), point: (x, y) => points.push([x, y]),
+      clamp: x => Math.max(0, Math.min(1, x)), x: 0, y: 0, stopped: false,
+    });
+    vm.runInContext(functionSource(text, 'flight') + '\nglobalThis.fly = flight;', context);
+    let resolved = false;
+    context.fly({ ghost: { remove() {} }, carry() {} }, { x: 100, y: 200 }, { over: true, progress: () => 1 }, from, to).then(() => { resolved = true; });
+    for (let i = 0; i < 4 && frames.length; i++) frames.shift()();
+    await Promise.resolve();
+    assert.equal(resolved, true, `completed audio interval ${from}..${to} cannot loop forever`);
+    assert.ok(points.length && points.every(pair => pair.every(Number.isFinite)), 'a completed interval cannot send the cursor to NaN coordinates');
+    assert.deepEqual(points.at(-1), [100, 200]);
+  }
+});
+
+test('an initial keyboard skip completes the same desktop without phone narration, slides or drops', async () => {
+  const h = await desktopHarness(), frame = h.frame;
+  await h.mac.complete(); await h.mac.play();
+  assert.deepEqual(h.ledger.filter(row => row.type === 'stage').map(row => row.step), ['done']);
+  assert.equal(h.ledger.filter(row => ['voice', 'sound', 'event'].includes(row.type)).length, 0);
+  assert.equal(h.ledger.filter(row => row.type === 'phone' && !row.reset).length, 0);
+  assert.equal(h.mac.state().finished, true); assert.equal(h.frame, frame); assert.equal(frame.src, undefined);
+});
+
+test('reduced-motion desktop completes directly to done without voices, drops or intermediate steps', async () => {
+  const h = await desktopHarness({ reduced: true }); await h.mac.play();
+  assert.deepEqual(h.ledger.filter(row => row.type === 'stage').map(row => row.step), ['done']);
+  assert.equal(h.ledger.filter(row => ['voice', 'sound', 'event'].includes(row.type)).length, 0);
+  assert.equal(h.ledger.filter(row => row.type === 'phone' && !row.reset).length, 0, 'reduced motion never exhibits the phone');
+  assert.equal(h.mac.state().finished, true); assert.equal(h.cursor.hidden, true);
 });
 
 // ---- The film over the galaxy, its hyperdrive, power and scroll, the black hole in the bubble.

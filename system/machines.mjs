@@ -52,12 +52,13 @@ export function readTailnet(status) {
   return { self: self && { ...self, online: true }, peers };
 }
 
-function publicMachine(peer, { self = false, reachable = false, protocol = null, capabilities = [] } = {}) {
+function publicMachine(peer, { self = false, reachable = false, protocol = null, capabilities = [], hosted = false } = {}) {
   return {
     id: peer.id,
     name: peer.name,
     url: peer.url,
     self,
+    hosted: hosted === true,
     online: self || Boolean(peer.online),
     reachable: self || Boolean(reachable),
     protocol: self ? MACHINE_PROTOCOL : protocol,
@@ -104,6 +105,7 @@ export function createMachines({ status = tailnetStatus, serve = serveStatus, fe
       if (body.owner != null && body.owner !== peer.id) return { reachable: false, protocol: null, capabilities: [] };
       return {
         reachable: true,
+        hosted: body.hosted === true,
         protocol: Number.isInteger(body.protocol) ? body.protocol : 0,
         capabilities: Array.isArray(body.capabilities)
           ? body.capabilities.filter(item => MACHINE_CAPABILITIES.includes(item))

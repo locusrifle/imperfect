@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { enginePath, launchImperfectBrowser } from './imperfect-browser.mjs';
+import { lockCommand } from '../system/pulse-ledger.mjs';
 
 export const engine = process.env.CHROMIUM ? 'chromium' : 'imperfect';
 export const chromiumPath = process.env.CHROMIUM || enginePath;
@@ -22,12 +23,11 @@ try {
     : `imperfect's browser unavailable: ${chromiumPath}. Run npm ci, or set CHROMIUM to an executable Chromium binary.`, { cause: error });
 }
 
-// A cross-process two-browser cap, held by the kernel: flock on Linux,
-// lockf on a Mac. Dead launcher leases are reclaimed; a launch failure
-// releases its lease too. Individual tests need not coordinate.
-const tryLock = (slot, program) => process.platform === 'darwin'
-  ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', slot, ...program]]
-  : ['flock', ['--nonblock', slot, ...program]];
+// A cross-process two-browser cap, held by the kernel: the lock Pulse's
+// ledger takes (flock on Linux, lockf or perl on a Mac), tried once. Dead
+// launcher leases are reclaimed; a launch failure releases its lease too.
+// Individual tests need not coordinate.
+const tryLock = (slot, program) => lockCommand(slot, program, process.platform, { wait: 0 });
 export async function browserLease({ root = join(tmpdir(), `imperfect-test-browsers-${process.getuid?.() ?? 'user'}`), timeout = 120_000 } = {}) {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const started = Date.now();

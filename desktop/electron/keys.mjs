@@ -6,7 +6,8 @@
 // are the session before and after, Super+F is full screen, Super+Shift+Enter
 // lays the input bar over it, Super+Shift+Left and Super+Shift+Right move the
 // columns along, Super+Shift+B is the browser, Super+1 to Super+5 select the
-// first five sessions, Super+V is what was copied; Super itself going down
+// first five sessions, Super+Shift+V is what was copied (Super+V pastes,
+// edit.mjs); Super itself going down
 // and up (hold, release) lets the canvas pick a window up under the pointer.
 // The canvas hears them itself, except in a page playing in a frame of it; a
 // website in a tab never does. From those they come here (main.mjs), and go
@@ -34,7 +35,8 @@ export function windowKey({ type, code, alt, control, meta, shift }, { alias = t
   if (code === 'ArrowRight') return shift ? 'along' : 'next';
   if (code === 'ArrowUp' || code === 'ArrowDown') return shift ? '' : code === 'ArrowUp' ? 'up' : 'down';
   if (!shift && /^Digit[1-5]$/.test(code)) return `session${code.slice(5)}`;
-  return (shift ? { Enter: 'over', KeyB: 'browser', KeyF: 'fullWindow' } : { KeyW: 'close', KeyF: 'full', KeyL: 'layout', KeyV: 'clipboard' })[code] ?? '';
+  if (code === 'KeyV') return Boolean(shift) === (mod === 'meta') ? 'clipboard' : '';
+  return (shift ? { Enter: 'over', KeyB: 'browser', KeyF: 'fullWindow' } : { KeyW: 'close', KeyF: 'full', KeyL: 'layout' })[code] ?? '';
 }
 
 // The modifier key itself pressed or let go: 'hold', 'release' or ''. Never

@@ -1,57 +1,54 @@
 {
   "voice": "VMXigKbZ87s0JTqCj2sl",
   "seed": 7,
-  "characters": 1104,
+  "characters": 223,
   "lines": [
     {
-      "text": "This is a Mac. And this is an app with no name yet. It's yours. Let's build it.",
+      "text": "This is a Mac. And this is imperfect. Let's build it.",
       "voice": "mac/sounds/line-0.m4a",
-      "durationMs": 6000
+      "durationMs": 4720,
+      "speechEndMs": 4800
     },
     {
-      "text": "First, we wrap the harnesses. Claude, ChatGPT, Codex, Pi. Every agent you use, in one window, with any model you like.",
+      "text": "Drop in Claude Code.",
       "voice": "mac/sounds/line-1.m4a",
-      "durationMs": 9760
+      "durationMs": 1680,
+      "speechEndMs": 1760
     },
     {
-      "text": "Then the files. Everything your agents make lands in one place. Your Workbench. Nothing gets lost.",
+      "text": "Then ChatGPT.",
       "voice": "mac/sounds/line-2.m4a",
-      "durationMs": 6960
+      "durationMs": 1840,
+      "speechEndMs": 1920
     },
     {
-      "text": "A browser, signed in to your sites. Your agent can use it too, and it asks before it sends, buys, or posts anything.",
+      "text": "Your files.",
       "voice": "mac/sounds/line-3.m4a",
-      "durationMs": 8240
+      "durationMs": 1200,
+      "speechEndMs": 1040
     },
     {
-      "text": "Your messages. Every conversation, in one place, where your agent can reach it.",
+      "text": "And a browser.",
       "voice": "mac/sounds/line-4.m4a",
-      "durationMs": 5680
+      "durationMs": 1120,
+      "speechEndMs": 1120
     },
     {
-      "text": "And it remembers. Every session, in every harness, becomes one memory your agents can search. Ask what you decided last week, and it knows.",
+      "text": "And it's on your phone.",
+      "voice": "mac/sounds/line-phone.m4a",
+      "durationMs": 1520
+    },
+    {
+      "text": "Now that software is one sentence away, you don't need apps other people made.",
       "voice": "mac/sounds/line-5.m4a",
-      "durationMs": 10080
+      "durationMs": 4720,
+      "speechEndMs": 4800
     },
     {
-      "text": "Ask for a film, and it plays right in the chat. No editing app. Your agent builds the interface for whatever you're doing, right when you need it.",
+      "text": "It's yours.",
       "voice": "mac/sounds/line-6.m4a",
-      "durationMs": 8480
-    },
-    {
-      "text": "On imperfect OS, every change your agents make can be read, and undone.",
-      "voice": "mac/sounds/line-7.m4a",
-      "durationMs": 5760
-    },
-    {
-      "text": "Close the laptop, and the work goes on. Pick up your phone, and it's the same computer.",
-      "voice": "mac/sounds/line-8.m4a",
-      "durationMs": 5440
-    },
-    {
-      "text": "One by one, your apps fold into one. And when everything is in one app, there's only one thing left to merge. The operating system underneath. It's time to build your own.",
-      "voice": "mac/sounds/line-9.m4a",
-      "durationMs": 12000
+      "durationMs": 1120,
+      "speechEndMs": 1120
     }
   ]
 }

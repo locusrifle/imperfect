@@ -43,6 +43,12 @@ const tryRun = (command, args, options) => { try { return run(command, args, opt
 const writable = dir => { try { accessSync(dir, constants.W_OK); return true; } catch { return false; } };
 const sha = (...parts) => { const hash = createHash('sha256'); for (const part of parts) hash.update(part); return hash.digest('hex'); };
 const json = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+// imperfect.app asked to quit, only while it is running, so that asking
+// never opens it. Its machine runs on.
+const quitApp = () => {
+  if (tryRun('/usr/bin/pgrep', ['-f', 'imperfect\\.app/Contents/MacOS/imperfect']) === null) return;
+  tryRun('/usr/bin/osascript', ['-e', `tell application id "${BUNDLE_ID}" to quit`], { timeout: 15_000 });
+};
 
 // Where imperfect.app goes: /Applications when this user may write there
 // (an administrator's Mac), else their own ~/Applications.
@@ -181,7 +187,7 @@ function bundle() {
     run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app]);
     // The app being replaced is asked to quit first; its machine runs on.
     if (existsSync(target)) {
-      tryRun('/usr/bin/osascript', ['-e', `tell application id "${BUNDLE_ID}" to quit`], { timeout: 15_000 });
+      quitApp();
       rmSync(target, { recursive: true, force: true });
     }
     mkdirSync(dirname(target), { recursive: true });
@@ -203,10 +209,29 @@ function dock(target) {
   tryRun('/usr/bin/killall', ['Dock']);
   say('imperfect is in the Dock (drag it out to remove it)');
 }
+// Undone: its tile goes too, rather than staying as a question mark.
+function leaveDock() {
+  const dir = mkdtempSync(join(tmpdir(), 'imperfect-dock-'));
+  try {
+    const file = join(dir, 'dock.plist');
+    if (tryRun('/usr/bin/defaults', ['export', 'com.apple.dock', file]) === null) return false;
+    const ours = [];
+    for (let at = 0; tryRun('/usr/bin/plutil', ['-extract', `persistent-apps.${at}`, 'xml1', '-o', '-', file]) !== null; at++) {
+      const url = tryRun('/usr/bin/plutil', ['-extract', `persistent-apps.${at}.tile-data.file-data._CFURLString`, 'raw', '-o', '-', file]) ?? '';
+      if (/\/imperfect\.app\/?$/.test(url.trim())) ours.push(at);
+    }
+    if (!ours.length) return false;
+    for (const at of ours.reverse()) run('/usr/bin/plutil', ['-remove', `persistent-apps.${at}`, file]);
+    run('/usr/bin/defaults', ['import', 'com.apple.dock', file]);
+    tryRun('/usr/bin/killall', ['Dock']);
+    return true;
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
 
 // 5. What agents show, on the person's own devices.
+const tailscaleCommand = () => ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', 'tailscale'].find(one => one.startsWith('/') ? existsSync(one) : tryRun('/usr/bin/which', [one]));
 function tailscale() {
-  const command = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', 'tailscale'].find(one => one.startsWith('/') ? existsSync(one) : tryRun('/usr/bin/which', [one]));
+  const command = tailscaleCommand();
   if (!command) { note('Tailscale is not installed: imperfect works on this Mac, but your other computers and phone cannot reach it'); return; }
   const status = tryRun(command, ['status', '--json'], { timeout: 8000 });
   if (!status) { note('Tailscale is installed but not signed in'); return; }
@@ -218,11 +243,15 @@ function tailscale() {
 
 function undo() {
   const target = appPath();
-  tryRun('/usr/bin/osascript', ['-e', `tell application id "${BUNDLE_ID}" to quit`], { timeout: 15_000 });
+  quitApp();
   spawnSync(process.execPath, [join(root, 'desktop/mac/keeper.mjs'), 'stop'], { stdio: 'inherit' });
   rmSync(target, { recursive: true, force: true });
-  const apps = tryRun('/usr/bin/defaults', ['read', 'com.apple.dock', 'persistent-apps']);
-  if (apps?.includes('imperfect.app')) note('imperfect.app is gone; its icon leaves the Dock when you drag it out');
+  if (leaveDock()) say('imperfect is out of the Dock');
+  else if (tryRun('/usr/bin/defaults', ['read', 'com.apple.dock', 'persistent-apps'])?.includes('imperfect.app')) note('imperfect.app is gone; its icon leaves the Dock when you drag it out');
+  // What agents show stops being published, as on Linux.
+  const command = tailscaleCommand();
+  if (command && (tryRun(command, ['serve', 'status', '--json'], { timeout: 8000 }) ?? '').includes(`http://127.0.0.1:${port + 1}`)
+    && tryRun(command, ['serve', '--https=8443', 'off'], { timeout: 15_000 }) === null) note('run `tailscale serve --https=8443 off` to stop publishing what agents show');
   rmSync(join(prefix, 'mac.json'), { force: true });
   say(`undone. your files in ${prefix} and this checkout are untouched`);
 }

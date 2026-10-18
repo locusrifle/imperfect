@@ -36,6 +36,17 @@ function fakeRuntime(initial = {}) {
   };
 }
 
+test('tab summaries retain the current provider independently of the display model', async () => {
+  const first = fakeRuntime({ model: { provider: 'openai-codex', id: 'gpt' }, messages: [{ role: 'assistant', model: 'old-model' }] });
+  const host = await createTabHost({ createRuntime: () => first });
+  try {
+    assert.equal(host.snapshot().tabs[0].model, 'old-model');
+    assert.equal(host.snapshot().tabs[0].provider, 'openai-codex');
+    first.set({ model: { provider: 'claude-agent', id: 'opus' } });
+    assert.equal(host.snapshot().tabs[0].provider, 'claude-agent');
+  } finally { await host.close(); }
+});
+
 test('settled fires when a model turn ends, not when a prompt is merely accepted', async () => {
   const first = fakeRuntime();
   const host = await createTabHost({ createRuntime: () => first });

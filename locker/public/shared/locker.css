@@ -178,29 +178,10 @@ body.oops > main { max-width: 52ch; }
 /* here the word is the mark on its own, in the brand's orange */
 .oops .mark { color: var(--accent); }
 .oops .mark::before { content: none; }
-.buy .mark { font-size: clamp(1.4rem, 4.5vh, 2.4rem); }
-.buy .checkout { align-items: flex-start; }
-/* buy, the way back, and at the end of that line the goat */
-.buy .actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.buy .actions .buy-goat { margin-left: auto; width: 5rem; height: 5rem; display: block; }
-/* The buy page arrives whole: hidden until buy.js has the black hole's specks
-   behind it ready, then everything shows at once; shown anyway after 2.5 s. */
-html.arriving body { opacity: 0; animation: arrive 0.2s ease-out 2.5s forwards; }
-body.buy { transition: opacity 0.2s ease-out; }
-@keyframes arrive { to { opacity: 1; } }
-.buy-stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0.55; } /* behind the words, not over them */
 /* The mark in pinks into purple, dark or light. */
 .mark, .oops .mark { width: fit-content; background: linear-gradient(90deg, #ff4fa3, #e040fb 50%, #b04dff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 @media (prefers-color-scheme: light) {
   ul.bullets li::before, h2.rule::before { color: var(--accent-2); }
 }
-.buy .notify label { color: var(--muted); font-size: 0.9rem; }
-/* The buy page is one screen: the spacing gives way to the window's height. */
-html:has(body.buy) { font-size: clamp(11px, min(2.02vh, 3.4vw), 16px); }
-body.buy { padding-block: clamp(1rem, 4vh, 3rem); justify-content: center; font-size: 0.9375rem; }
-body.buy > main { max-width: 74ch; }
-.buy ul { gap: 0.2rem; }
-body.buy > main { gap: clamp(0.9rem, 3.2vh, 2.25rem); }
-.buy section { gap: clamp(0.4rem, 1.4vh, 0.9rem); }
 .notify { gap: 0.5rem; }
 .notify label { color: var(--ink); font-size: 1rem; }

@@ -41,6 +41,9 @@ test('GUI-only harness: windows, drafts, scroll, retry IDs and reload', async ()
   try {
     const page=await browser.newPage({viewport:{width:1200,height:900}});
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+    // This original scroll/queue/Escape regression assumes a collapsed tab
+    // rail. Select scrolling explicitly now that browsers default to focus.
+    await page.addInitScript(() => localStorage.setItem('imperfect.layout-choice', 'scrolling'));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     const mount = async()=>{
       const {mountGueyPi}=await import('/js/harness.js');

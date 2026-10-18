@@ -16,6 +16,7 @@ import { holdProjects, startProject } from './projects.js';
 import { mountLive } from './live.js';
 import { mountTabStrip } from './browser-tab-strip.js';
 import { mountStartPage } from './browser-start.js';
+import { launchShopURL, prepareLaunchShop } from './launch-open.js';
 
 const VIEW = { png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', avif: 'image', mp4: 'video', webm: 'video', mov: 'video', m4v: 'video', mp3: 'audio', wav: 'audio', ogg: 'audio', flac: 'audio', m4a: 'audio', opus: 'audio', pdf: 'pdf', html: 'page', htm: 'page' };
 export function viewOf(path) {
@@ -266,6 +267,17 @@ export function windowNode({ shape = 'landscape', target }, { base = '' } = {}) 
   addressFor(target, base).then(src => body.replaceChildren(player(kindOf(src), src, name)),
     error => body.replaceChildren(make('p', 'gui-window-error', `${name}: ${error.message}`)));
   return win;
+}
+
+// The browser's ordinary tool endpoint returns native tab ids. Assembly
+// reuses a Google page, never an unrelated tab or a new tab per visit.
+export async function prepareLaunchBrowser(ask) {
+  const { tabs } = await ask({ do: 'tabs' });
+  if (!Array.isArray(tabs)) throw new Error('The browser did not return its tabs');
+  const google = tabs.find(tab => { try { return ['www.google.com', 'google.com'].includes(new URL(tab.url).hostname); } catch { return false; } });
+  const target = google ?? await ask({ do: 'open', url: 'https://www.google.com' });
+  if (!Number.isSafeInteger(target.tab) || target.tab <= 0) throw new Error('The browser did not return its tab');
+  await ask({ do: 'front', tab: target.tab });
 }
 
 const ICON = path => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="miter"/></svg>`;
@@ -835,6 +847,41 @@ export function mountPages({ output, wm, base = () => '', launchBase = null, lau
     return launching;
   }
 
+  // The launch sequence watches the real serving computer, not a web iframe
+  // of Google. Reuse its Google tab across visits; never navigate a person's
+  // unrelated tab or accumulate one per visitor. The ordinary live transport
+  // remains responsible for on-demand start, visibility and error states.
+  const askLaunchBrowser = async request => {
+    const response = await fetch('/browser', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request), signal: AbortSignal.timeout(30000) });
+    const answer = await response.json();
+    if (!response.ok || answer.error) throw new Error(answer.error || `Browser unavailable (${response.status})`);
+    return answer;
+  };
+  function revealLaunchBrowser() {
+    watch('', { quiet: false, remote: true });
+    live.pinned = true;
+    wm.reveal(live.win);
+    return live.view;
+  }
+  let assemblingBrowser = null, openingShop = null;
+  const shop = { tab: null };
+  function assembleBrowser() {
+    if (assemblingBrowser) return assemblingBrowser;
+    revealLaunchBrowser();
+    assemblingBrowser = prepareLaunchBrowser(askLaunchBrowser);
+    return assemblingBrowser;
+  }
+  function openShop(value) {
+    const url = launchShopURL(value);
+    if (!url) return Promise.reject(new Error('Only the public Shop can be opened'));
+    if (openingShop) return openingShop;
+    revealLaunchBrowser();
+    // This existing live pane follows the serving browser's front, exactly
+    // as the Google assembly does. Immutable scoped previews are untouched.
+    openingShop = prepareLaunchShop(askLaunchBrowser, url, shop).finally(() => { openingShop = null; });
+    return openingShop;
+  }
+
   // Ctrl+T and + always create a tab, even when the current one is blank.
   function browse() {
     const pane = paneOf(), remote = pane?.front?.live;
@@ -849,7 +896,7 @@ export function mountPages({ output, wm, base = () => '', launchBase = null, lau
     tab.pane.address?.focus({ preventScroll: true });
   }
   return {
-    open: show, shown, project, browse, launch, portal, visit, flick, watch,
+    open: show, shown, project, browse, launch, portal, visit, flick, watch, assembleBrowser, openShop,
     newTab: () => wm.focused?.()?.kind === 'live' && live ? live.view.newTab() : browse(),
     closeFront: () => {
       const focused = wm.focused?.();

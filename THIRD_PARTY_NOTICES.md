@@ -95,14 +95,19 @@ not a ranked breached-password list.
 
 ## Mac app identifiers in the launch
 
-`website/mac/icons/notes.webp`, `imovie.webp` and `time-machine.webp` are Apple's
-actual Notes, iMovie and Time Machine artwork, converted to WebP from Apple's
-public [Notes](https://support.apple.com/guide/notes/welcome/4.11/mac/15.0),
-[iMovie](https://support.apple.com/guide/imovie/welcome/mac) and
-[Time Machine](https://support.apple.com/guide/mac-help/back-up-files-mh35860/15.0/mac/15.0)
-user guides (retrieved 18 October 2026). They identify those apps in the Mac
-sequence, alongside the existing Mac Dock imagery. Apple retains its rights;
-these brand assets are not MIT-licensed, and no Apple endorsement is implied.
+`website/mac/icons/dock-*.webp` are normalized app-identification artwork for
+the Mac desktop sequence, not MIT-licensed application code. Finder, Safari,
+System Settings and App Store retain the existing Mac Dock artwork.
+Launchpad, Dock's native dark empty/full Trash and imperfect's own installed
+app icon were extracted read-only from Noah's macOS Sequoia 15.8.1 Mac
+(18 October 2026).
+Notes and iMovie came from Apple's public
+[Notes](https://support.apple.com/guide/notes/welcome/4.11/mac/15.0) and
+[iMovie](https://support.apple.com/guide/imovie/welcome/mac) user guides.
+Final Cut Pro's identification artwork came from
+[Wikimedia](https://upload.wikimedia.org/wikipedia/en/9/9f/2015_Final_Cut_Pro_Logo.png).
+Claude and ChatGPT retain their existing brand artwork. Apple, Anthropic and
+OpenAI retain their respective artwork rights; no endorsement is implied.
 
 ## Not in this repository
 

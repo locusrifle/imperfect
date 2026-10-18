@@ -1,5 +1,6 @@
 import { mountHistoryPage } from './usage-page.js';
 import { mountGraphs } from './usage-graphs.js';
+import { createUsageDrain, tabSubscription, DRAIN_READ_MS } from './usage-drain.js';
 // Desktop UsagePage and LimitWindows / WindowBar adapted from T3 Code 43f8a8de17a7ac1baa7a3cf36d681856de2d8add.
 // Copyright (c) 2026 T3 Tools Inc. MIT: apps/code/licenses/T3-Code-MIT.txt.
 // Lucide CircleGauge 1.50.0, the icon used by Paseo's SidebarUsageIcon.
@@ -143,7 +144,7 @@ export function readUsagePreferences(storage) {
 function saveUsagePreferences({ metric, period }) {
   try { globalThis.localStorage?.setItem(PREFERENCE_KEY, JSON.stringify({ metric, period })); } catch { /* Storage may be disabled. */ }
 }
-export function mountUsage({ command, captureCommand = () => command, panel = document.querySelector('.entry-screen'), identity = () => '', ownerLabel = identity, cacheIdentity = identity, scopeLabel = ownerLabel, selectScope = null, revalidateMs = 180000 }) {
+export function mountUsage({ command, captureCommand = () => command, panel = document.querySelector('.entry-screen'), identity = () => '', ownerLabel = identity, cacheIdentity = identity, scopeLabel = ownerLabel, selectScope = null, tabs = () => [], revalidateMs = 180000 }) {
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const button = el('button', 'entry-voice entry-usage');
   button.type = 'button'; button.innerHTML = GAUGE;
@@ -154,6 +155,10 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
   const outcomes = { not_applied: 'Reset not sent: the account or reset could not be validated. Refresh limits, then confirm an available reset again.', reset: 'Reset applied. Refresh limits to check the new windows.', nothing_to_reset: 'Nothing to reset; no reset was applied.', no_credit: 'No reset credit available; refresh limits.', already_redeemed: 'This reset was already redeemed. Refresh limits to check the new windows.', uncertain: 'Result unknown. Refresh to check, or explicitly retry this same reset; never use a new request.' };
   let metricControls = null, periodControls = null, scope = null, localOnly = false, lastRead = 0, reading = false;
   const reflections = new Map();
+  let drain = createUsageDrain(), activityKey = '';
+  const agentFor = account => Object.keys(SUBSCRIPTIONS).find(agent => SUBSCRIPTIONS[agent].name === account);
+  const isDraining = (account, name) => drain.isDraining(agentFor(account), name, tabs());
+  const readEvery = () => usageSections(shownLimits).some(section => section.windows?.some(w => w.remaining !== null && isDraining(section.title.split(' · ')[0], w.name))) ? Math.min(revalidateMs, DRAIN_READ_MS) : revalidateMs;
   const cacheKey = () => `imperfect:usage-reflection:v1:${cacheIdentity()}`;
   function reflection(id = cacheKey()) {
     if (!reflections.has(id)) {
@@ -171,6 +176,7 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
   }
   const keep = (field, data, id) => {
     const held = reflection(id);
+    if (field === 'limits' && id === cacheKey()) drain.observe(data);
     held[field] = { data, at: Date.now(), stale: false };
     try { localStorage.setItem(id, JSON.stringify(held)); } catch { /* memory reflection still works */ }
   };
@@ -247,6 +253,7 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
       tile.append(dial, el('p', 'usage-ring-name', `${w.account} · ${w.name}`), el('p', 'usage-ring-note', note));
       if (w.resetsAt !== null) tile.append(el('p', 'usage-ring-reset', `resets ${whenLong(w.resetsAt)}`));
       tile.title = paceWords(w.pace);
+      markDraining(tile, w.account, w.name, w.remaining);
       part.append(tile);
     }
     if (today) {
@@ -279,12 +286,18 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
       if (section.line) account.append(el('p', 'usage-line', section.line));
       for (const w of section.windows ?? []) {
         const row = el('div', 'usage-window'), label = el('div', 'usage-window-label');
+        const accountName = section.title.split(' · ')[0];
+        row.dataset.account = accountName; row.dataset.window = w.name;
+        markDraining(row, accountName, w.name, w.remaining);
         label.append(el('span', 'usage-window-name', w.name), el('span', 'usage-percent', w.remaining === null ? 'Unknown' : `${w.remaining}% left`));
         const bar = el('div', 'usage-bar'), track = el('span', 'usage-track'); bar.append(track);
         if (w.remaining !== null) {
-          const fill = el('span', 'usage-fill'); fill.style.width = `${w.remaining}%`; track.append(fill);
+          const fill = el('span', 'usage-fill'); fill.style.width = `${w.remaining}%`;
+          const old = [...(body?.querySelectorAll('.usage-window') ?? [])].find(n => n.dataset.account === accountName && n.dataset.window === w.name);
+          fill.style.setProperty('--usage-previous', old?.querySelector('.usage-fill')?.style.width ?? `${w.remaining}%`);
+          track.append(fill);
           bar.setAttribute('role', 'meter'); bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100');
-          bar.setAttribute('aria-valuenow', String(w.remaining)); bar.setAttribute('aria-valuetext', `${w.remaining}% left${w.reset ? `, ${w.reset}` : ''}`);
+          bar.setAttribute('aria-valuenow', String(w.remaining)); bar.setAttribute('aria-valuetext', `${w.remaining}% left${isDraining(accountName, w.name) ? ', being used now' : ''}${w.reset ? `, ${w.reset}` : ''}`);
         } else { bar.setAttribute('role', 'img'); }
         bar.setAttribute('aria-label', `${section.title}, ${w.name}${w.remaining === null ? ': quota unknown' : ''}`);
         bar.tabIndex = 0;
@@ -407,9 +420,9 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
   }
   function sync() {
     if (document.hidden) return;
-    syncSummary();
+    syncSummary(); syncActivity();
     if (!box) return;
-    if (key !== identity() || pageCacheKey !== cacheKey() || (reading !== generation && Date.now() - lastRead >= revalidateMs)) void refresh();
+    if (key !== identity() || pageCacheKey !== cacheKey() || (reading !== generation && Date.now() - lastRead >= (preferences.metric === 'limits' ? readEvery() : revalidateMs))) void refresh();
   }
   function open(fromKeyboard) {
     Object.assign(preferences, readUsagePreferences());
@@ -452,6 +465,7 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
     // Drop the old scope's in-flight token as well as its throttle. Returning
     // A -> B -> A must not revive A's earlier response, even with Usage closed.
     summaryKey = id; summaryReading = null; summaryAt = 0;
+    drain = createUsageDrain();
     const held = reflection(id);
     if (held.limits) held.limits.stale = true;
     paintSummary(held.limits?.data ?? null);
@@ -462,21 +476,58 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
     const now = Date.now();
     let rows = [];
     try { rows = footRows(answer, now); } catch { /* an unreadable answer draws nothing */ }
+    const existing = new Map([...summary.querySelectorAll('.usage-row')].map(row => [row.dataset.key, row]));
     const parts = rows.map(w => {
-      const row = el('span', 'usage-row');
+      const id = JSON.stringify([w.account, w.name]);
+      const row = existing.get(id) ?? el('span', 'usage-row');
+      row.dataset.key = id;
+      markDraining(row, w.account, w.name, w.remaining);
       row.dataset.pace = w.pace?.ahead ? 'ahead' : 'even'; row.dataset.low = String(w.remaining <= 15);
-      const name = el('span', 'usage-row-name', w.account); name.append(' ', el('span', 'usage-row-window', w.short));
-      const meter = el('span', 'usage-row-meter'), fill = el('span', 'usage-row-fill');
-      fill.style.width = `${w.remaining}%`; meter.append(fill);
-      row.append(name, meter, el('span', 'usage-row-left', `${w.remaining}%`), el('span', 'usage-row-reset', shortLeft(w.resetsAt - now)));
+      if (!row.firstChild) {
+        const name = el('span', 'usage-row-name', w.account); name.append(' ', el('span', 'usage-row-window', w.short));
+        const meter = el('span', 'usage-row-meter'); meter.append(el('span', 'usage-row-fill'));
+        row.append(name, meter, el('span', 'usage-row-left'), el('span', 'usage-row-reset'));
+      }
+      row.querySelector('.usage-row-fill').style.width = `${w.remaining}%`;
+      row.querySelector('.usage-row-left').textContent = `${w.remaining}%`;
+      row.querySelector('.usage-row-reset').textContent = shortLeft(w.resetsAt - now);
       return row;
     });
     if (!parts.length) { const icon = el('span', 'usage-summary-icon'); icon.innerHTML = GAUGE; parts.push(icon, el('span', 'usage-summary-name', 'Usage')); }
-    summary.replaceChildren(...parts);
-    summary.title = rows.length ? rows.map(w => `${w.account} ${w.name}: ${w.remaining}% left${w.reset ? `, ${w.reset}` : ''}${w.pace ? `. ${paceWords(w.pace)}` : ''}`).join('\n') : 'Usage';
+    if (parts.length !== summary.childNodes.length || parts.some((part, i) => part !== summary.childNodes[i])) summary.replaceChildren(...parts);
+    summary.title = rows.length ? rows.map(w => `${w.account} ${w.name}: ${w.remaining}% left${isDraining(w.account, w.name) ? ', being used now' : ''}${w.reset ? `, ${w.reset}` : ''}${w.pace ? `. ${paceWords(w.pace)}` : ''}`).join('\n') : 'Usage';
+    summary.setAttribute('aria-label', summary.title);
+  }
+  function markDraining(row, account, name, remaining) {
+    const active = remaining !== null && isDraining(account, name);
+    row.dataset.draining = String(active);
+    const text = `${account} ${SHORT_WINDOW(name)}: ${remaining === null ? 'quota unknown' : `${remaining}% left`}${active ? ', being used now' : ''}`;
+    row.title = text; row.setAttribute('aria-label', text);
+  }
+  function paintPageActivity() {
+    if (!box || preferences.metric !== 'limits') return;
+    for (const row of body.querySelectorAll('.usage-window')) {
+      const remaining = row.querySelector('[aria-valuenow]')?.getAttribute('aria-valuenow');
+      markDraining(row, row.dataset.account, row.dataset.window, remaining === undefined ? null : Number(remaining));
+      const meter = row.querySelector('[aria-valuenow]');
+      if (meter) {
+        const text = meter.getAttribute('aria-valuetext').replace(', being used now', '');
+        meter.setAttribute('aria-valuetext', row.dataset.draining === 'true' ? text.replace('% left', '% left, being used now') : text);
+      }
+    }
+    const rings = usageFoot(limits).rings;
+    for (const [i, row] of [...body.querySelectorAll('.usage-ring')].entries()) {
+      const w = rings[i]; if (w) markDraining(row, w.account, w.name, w.remaining);
+    }
+  }
+  function syncActivity() {
+    const next = JSON.stringify([...new Set(tabs().map(tabSubscription).filter(Boolean))].sort());
+    if (activityKey === next) return;
+    activityKey = next;
+    paintSummary(); paintPageActivity();
   }
   async function readSummary(force = false) {
-    if (summaryReading || document.hidden || (!force && Date.now() - summaryAt < revalidateMs)) return;
+    if (summaryReading || document.hidden || (box && reading && preferences.metric === 'limits') || (!force && Date.now() - summaryAt < readEvery())) return;
     const id = cacheKey(), request = {}; summaryReading = request; summaryAt = Date.now();
     try {
       const answer = await command('usage');
@@ -487,15 +538,15 @@ export function mountUsage({ command, captureCommand = () => command, panel = do
       // its reusable value coherent when this scope's sidebar answer arrives.
       if (box && pageCacheKey === id && key === identity()) {
         limits = latest;
-        if (preferences.metric === 'limits' && !reading) show();
+        if (preferences.metric === 'limits' && !reading) { lastRead = summaryAt; show(); }
       }
-      paintSummary(latest);
+      paintSummary(latest); paintPageActivity();
     } catch { /* the last reading stays until the computer answers */ }
     finally { if (summaryReading === request) summaryReading = null; }
   }
   try { paintSummary(reflection().limits?.data ?? null); } catch { paintSummary(null); }
   setTimeout(() => { syncSummary(); void readSummary(true); }, 1500);
   // Every half minute: the countdowns move on, and the limits are read when due.
-  setInterval(() => { syncSummary(); paintSummary(); void readSummary(); }, 30000);
-  return { button, summary, close, sync, get isOpen() { return Boolean(box); } };
+  setInterval(() => { if (document.hidden) return; syncSummary(); paintSummary(); paintPageActivity(); void readSummary(); }, 30000);
+  return { button, summary, close, sync, syncActivity, get isOpen() { return Boolean(box); } };
 }

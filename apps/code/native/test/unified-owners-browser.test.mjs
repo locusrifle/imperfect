@@ -13,7 +13,7 @@ test('two live owners: persistent rail, colliding identities, drafts/images, tar
   let refuseFocus = false;
   let offline = false, uploads = 0, holdSnapshot = false, heldSnapshot;
   const snapshots = Object.fromEntries(['a', 'b'].map(owner => [owner, {
-    agent: 'pi', sessionId: 'same-session', cwd: '/fixture', model: { provider: 'fixture', id: owner },
+    agent: 'pi', sessionId: 'same-session', cwd: '/fixture', model: { provider: 'fixture', id: owner }, harnesses: [{ agent: 'pi', ready: true }],
     messages: [{ role: 'user', content: `owner ${owner}` }], stats: {}, ui: {},
     queue: { items: [{ id: 'same-queue', lane: 'steering', text: `${owner} queued`, images: [{ type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' }] }] },
     tabs: [{ id: 'same-tab', sessionId: 'same-session', focused: true, agent: 'pi', model: owner, name: owner }],
@@ -64,7 +64,12 @@ test('two live owners: persistent rail, colliding identities, drafts/images, tar
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     const url = `http://127.0.0.1:${server.address().port}/?face=code`;
-    await page.addInitScript(() => localStorage.setItem('guey-draft:' + JSON.stringify(['a', 'same-session']), 'saved local draft'));
+    await page.addInitScript(() => {
+      // This owner/queue regression also asserts the scrolling layout's rail.
+      // Browser windows now default to focus; choose the layout under test.
+      localStorage.setItem('imperfect.layout-choice', 'scrolling');
+      localStorage.setItem('guey-draft:' + JSON.stringify(['a', 'same-session']), 'saved local draft');
+    });
     await page.goto(url);
     await page.evaluate(async () => {
       const { mountGueyPi } = await import('/js/harness.js');
@@ -157,9 +162,9 @@ test('two live owners: persistent rail, colliding identities, drafts/images, tar
     assert.equal(page.url(), url);
     assert.equal(urls.length, 2, 'selection reuses persistent streams');
     await page.evaluate(() => harness.newTab());
-    await page.waitForFunction(() => document.activeElement?.dataset?.owner === 'b');
-    assert.equal(await page.locator('[data-owner="c"].agent-choose-option').isDisabled(), true);
-    await page.locator('[data-owner="b"].agent-choose-option').click();
+    assert.equal(await page.locator('.agent-choose-machine option[value="c"]').isDisabled(), true);
+    await page.locator('.agent-choose-machine').selectOption('b');
+    await page.locator('.agent-choose-harness[data-agent="pi"]').click();
     await page.waitForFunction(() => !document.querySelector('#entry-terminal').classList.contains('choosing') || document.querySelector('.agent-choose-error'));
     assert.equal(await page.evaluate(() => document.querySelector('.agent-choose-error')?.textContent ?? null), null);
     assert.deepEqual(calls.filter(c => c.type === 'tab-new').map(c => c.owner), ['b'], 'explicit creation only on selected destination');

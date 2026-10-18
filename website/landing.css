@@ -107,7 +107,7 @@ nav a:not(.button) { display: inline-flex; align-items: center; min-height: 44px
 input { min-height: 44px; padding: 10px 14px; border: 1px solid var(--silver); background: #000; color: var(--cream); font: 400 16px/1.4 'Outfit', system-ui, sans-serif; }
 .footer { padding: 28px 48px; display: flex; justify-content: space-between; align-items: center; gap: 24px; font-size: 12px; color: var(--silver); }
 .footer a { display: inline-flex; align-items: center; min-height: 44px; color: var(--silver); }
-/* The handoff pages (buy, host, the account, the OS install guide) share one quiet column. */
+/* The handoff pages (Shop thanks, host, the account, the OS install guide) share one quiet column. */
 .handoff { max-width: 800px; padding: 68px 48px 100px; min-height: 70vh; }
 .handoff h1 { margin-bottom: 28px; }
 .handoff ul, .handoff ol { padding-left: 24px; margin-block: 28px; }
@@ -116,13 +116,7 @@ input { min-height: 44px; padding: 10px 14px; border: 1px solid var(--silver); b
 .price { margin-top: 20px; margin-bottom: 28px; font-size: 36px; line-height: 1.2; letter-spacing: -.02em; color: var(--cream); }
 .price span { font-size: 15px; letter-spacing: 0; white-space: nowrap; color: var(--silver); }
 .notice { margin-top: 28px; padding: 20px; border: 1px solid var(--silver); }
-/* Option one is closed until billing is open (server.mjs swaps data-billing on /buy). */
-.option { margin-top: 48px; padding-top: 48px; border-top: 1px solid var(--silver); }
-.option h2 { margin-top: 18px; }
-.option .price { margin-top: 20px; }
-[data-billing="closed"] .rent-open, [data-billing="open"] .rent-closed, [data-code="closed"] .code-open, [data-code="open"] .code-closed { display: none; }
-.rent-open > p { margin-top: 20px; }
-.rent-open > .button { margin-top: 28px; }
+.handoff code { font-family: ui-monospace, monospace; }
 @media (max-width: 700px) {
   body { font-size: 14px; }
   .header { padding: 16px 20px; gap: 12px; }

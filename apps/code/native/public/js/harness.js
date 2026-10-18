@@ -25,6 +25,7 @@ import { usageOwner } from './usage-owner.js';
 import { permissionFor, harnessMark, sessionMark, harnessName, harnessLabel, modelText, modelLabel } from './agent-faces.js';
 import { newestOfEachLine } from './model-lines.js';
 import { clipboardHasText, filesFromClipboardData, filesFromClipboardItems } from './clipboard-files.js';
+import { containChoosing } from './choose-text.js';
 import { registerKeyBinding, MOD } from './pi-card.js';
 import { transcriptScroll } from './transcript-scroll.js';
 import { liveMessage } from './live-message.js';
@@ -35,6 +36,10 @@ import { mountClipboardHistory } from './clipboard-history.js';
 import { mountScreenshotPreview } from './screenshot-preview.js';
 import { screenshotDraft } from './screenshot-draft.js';
 import { turn, still, OPEN, OPENING } from './turn.js';
+import { framedByLaunch, phoneByLaunch } from './arrival.js';
+import { mountLaunchOpen } from './launch-open.js';
+import { mountAssembly, ASSEMBLY_STEPS } from './assembly.js';
+import { computerChoices } from './computer-choice.js';
 
 const el = (tag, text, className) => {
 	const node = document.createElement(tag);
@@ -144,7 +149,14 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	let overlay = null;          // a picker we are showing in #entry-dialog
 	// A tab that exists on screen before it exists on the machine: the
 	// question of which computer it runs on is asked on its own blank page.
-	let choosing = null;
+	const launchFramed = framedByLaunch(), launchPhone = phoneByLaunch();
+	let assemblyStep = launchFramed ? 'bare' : null;
+	let choosing = launchFramed ? { owner: null, index: 0, auto: false, harnesses: null, agent: null, launch: true } : null;
+	if (launchFramed) {
+		restoredView = null;
+		document.documentElement.classList.add(launchPhone ? 'launch-phone' : 'launch-framed');
+		document.documentElement.dataset.assemblyStep = 'bare';
+	}
 	// Sessions this screen has already seen, by machine; see followNewSession.
 	const knownSessions = new Set(), heardOwners = new Set();
 	const queueBox = byId('entry-queue'), flash = byId('entry-flash');
@@ -173,9 +185,9 @@ export function mountGueyPi({ hooks = {} } = {}) {
 
 	const kind = () => (phone() ? 'phone' : 'desktop');
 	const helloFields = () => ({
-		kind: kind(),
+		kind: launchPhone ? 'viewer' : kind(),
 		width: innerWidth, height: innerHeight, dpr: devicePixelRatio || 1,
-		visible: document.visibilityState === 'visible',
+		visible: !launchPhone && document.visibilityState === 'visible',
 	});
 	function hello() { ownerCommand(LOCAL, 'hello', helloFields()).catch(() => {}); }
 	const disconnectedOwners = new Set();
@@ -264,7 +276,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		if (document.hidden && !state?.busy) return;
 		if (owner !== LOCAL) await refreshMachines();
 		const transport = ensureTransport(owner);
-		const alive = await transport.check({ fields: owner === LOCAL ? helloFields() : { kind: 'viewer', visible: true } });
+		const alive = await transport.check({ fields: owner === LOCAL ? helloFields() : { kind: 'viewer', visible: !launchPhone } });
 		// One that did not answer is replaced straight away.
 		if (!alive && !transport.socket) transport.connect();
 		if (!alive || owner !== selectedOwner || switching) return;
@@ -306,7 +318,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 				if (status === 'open') {
 					drops = 0;
 					if (owner === LOCAL) hello();
-					else ownerCommand(owner, 'hello', { kind: 'viewer', visible: true }).catch(() => {});
+					else ownerCommand(owner, 'hello', { kind: 'viewer', visible: !launchPhone }).catch(() => {});
 					// Used a moment ago and only now connected, as a phone is when it wakes.
 					if (Date.now() - usedAt < 10_000) tellHere(owner);
 				} else {
@@ -331,6 +343,9 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		return transport;
 	}
 	function receiveOwner(owner, message) {
+		// This companion is a passive chooser, never the person's browser target,
+		// notification/screenshot surface or a second set of agent-opened panes.
+		if (launchPhone && !['snapshot', 'tab-snapshot', 'look'].includes(message.type)) return;
 		if (owner === LOCAL && localDesktop() && ['snapshot', 'tab-snapshot'].includes(message.type)) {
 			const cached = cacheLocal(message.data, message.tabId);
 			if (cached) message = { ...message, data: cached };
@@ -391,7 +406,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 			// Back after a drop, and the owner offers its own focus, not this
 			// window's. The window was on a session: if that session is still
 			// there it goes straight back to it, and only asks when it is gone.
-			if (disconnectedOwners.has(owner) && state && state.sessionId !== data?.sessionId) {
+			if (!choosing?.launch && disconnectedOwners.has(owner) && state && state.sessionId !== data?.sessionId) {
 				const wanted = focusedTabId();
 				if (wanted && !returning && (data?.tabs ?? []).some(tab => tab.id === wanted)) {
 					returning = ownerCommand(owner, 'tab-focus', { tabId: wanted, snapshot: true })
@@ -614,10 +629,8 @@ export function mountGueyPi({ hooks = {} } = {}) {
 			paintSessionRail();
 		}
 	}
-	// A new session asks which computer it is on, then which harness: Codex,
-	// Claude Code or Pi (Noah). Each question is asked only when there is a
-	// choice. The harness starts on its own last model; the model label
-	// changes it once inside.
+	// One client-side page picks the computer and its harness. Nothing starts
+	// until a harness is explicitly activated; it keeps its own last model.
 	function newTab() {
 		return beginNewAgent();
 	}
@@ -628,18 +641,12 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	// another machine has one, that is where this screen goes instead.
 	async function beginNewAgent({ auto = false } = {}) {
 		if (creating || choosing) return;
-		choosing = { owner: null, index: 0, auto, harnesses: null, agent: null, devices: false };
+		choosing = { owner: hereOwner() || null, index: 0, auto, harnesses: null, agent: null };
 		render();
 		await refreshMachines();
 		followNewSession();
-		const usable = machineRows.filter(machine => machine.self || machine.reachable);
-		if (choosing) choosing.devices = usable.length > 1;
-		if (choosing && !choosing.owner && usable.length === 1) { await chooseOwner(usable[0].id); return; }
-		// Unless the person picks another, a new session starts on the computer
-		// the others follow (the PC): it is always on, so the work goes on with
-		// this one shut. Enter takes it; the arrows reach the rest.
-		const home = usable.findIndex(machine => machine.home);
-		if (choosing && home >= 0) choosing.index = home;
+		const machine = machineRows.find(machine => machine.self) ?? machineRows.find(machine => machine.reachable);
+		if (choosing && machine) await chooseOwner(machine.id);
 		if (choosing) { render(); focusChoice(); }
 	}
 	async function chooseOwner(id) {
@@ -647,13 +654,15 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		const asked = choosing;
 		choosing.owner = id;
 		choosing.error = '';
+		// Never offer the previous computer's harnesses while this one connects.
+		choosing.harnesses = null;
+		render();
 		const harnesses = await harnessesOn(id);
-		if (choosing !== asked) return;
-		// Older imperfects do not say which harnesses they have, and one that
-		// can start only one has nothing to ask: the device's own default.
-		if (!harnesses || harnesses.filter(row => row.ready).length < 2) { await startTab(); return; }
+		if (choosing !== asked || choosing.owner !== id) return;
 		choosing.harnesses = harnesses;
-		choosing.index = Math.max(0, harnesses.findIndex(row => row.usual));
+		if (!harnesses) choosing.error = 'Harnesses unavailable on this computer. Choose it again to retry.';
+		const computerCount = computerChoices(machineRows, id).filter(row => !row.disabled).length;
+		choosing.index = computerCount + Math.max(0, harnesses?.findIndex(row => row.usual) ?? 0);
 		render(); focusChoice();
 	}
 	// A harness not signed in on that computer offers its sign-in there, at
@@ -671,16 +680,6 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		choosing.agent = agent;
 		choosing.error = '';
 		await startTab();
-	}
-	// Back from the harness to the computers, when there were computers to
-	// choose from; otherwise this is cancelling.
-	function backToDevices() {
-		if (!choosing?.harnesses || creating || !choosing.devices) return false;
-		const owner = choosing.owner;
-		Object.assign(choosing, { harnesses: null, agent: null, owner: null, error: '' });
-		choosing.index = Math.max(0, machineRows.filter(machine => machine.self || machine.reachable).findIndex(machine => machine.id === owner));
-		render(); focusChoice();
-		return true;
 	}
 	// The harnesses a computer offers, in the order Noah names them, from its
 	// snapshot: this window's own, or the one its connection to that computer
@@ -703,6 +702,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	// heard from is only taking attendance: the sessions it already had are not
 	// new.
 	function followNewSession() {
+		if (choosing?.launch) return;
 		let started = null;
 		for (const [owner, transport] of transports) {
 			const tabs = owner === selectedOwner ? state?.tabs : transport.snapshot?.tabs;
@@ -722,8 +722,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		enterTab(started.id, started.owner).catch(fail);
 	}
 	function cancelChoosing() {
-		if (!choosing || creating) return false;
-		if (backToDevices()) return true;
+		if (!choosing || creating || (assemblyStep && assemblyStep !== 'done')) return false;
 		// With no tabs behind it there is nothing to cancel back to, so the
 		// question stays until it is answered.
 		if (!(state?.tabs ?? []).length) return false;
@@ -745,7 +744,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 			await refreshMachines();
 			if (choosing !== selection) return;
 			const machine = machineRows.find(row => row.id === selection.owner);
-			if (!machine || (!machine.self && !machine.reachable)) throw new Error('Selected device is offline; no session created');
+			if (!machine || (!machine.self && !machine.reachable)) throw new Error('Selected computer is offline; no session created');
 			// Creation is authorized by the selected, inventory-verified
 			// transport, not by which machine served the page. Without a harness
 			// named, the device starts the tab on its last model.
@@ -758,47 +757,63 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		finally { creating = false; render(); }
 		if (!choosing) input?.focus();
 	}
+	const chooserAgentsSeen = new Set();
 	function renderChooser(into) {
 		const page = el('section', null, 'agent-choose');
 		const first = !(state?.tabs ?? []).length;
-		// With one computer to start on (always, on a hosted one) there is no
-		// question: the page stays blank while the session starts there, unless
-		// starting it failed. Nor is one asked before the computers are known.
-		const usable = machineRows.filter(machine => machine.self || machine.reachable);
-		// what that computer says now, so a sign-in just made shows at once
-		const harnesses = choosing.harnesses && (liveHarnesses(choosing.owner) ?? choosing.harnesses);
-		if (creating || !machinesKnown || (!harnesses && (usable.length === 1 || choosing.owner) && !choosing.error)) { into.append(page); return; }
+		const building = assemblyStep && assemblyStep !== 'done';
+		if (creating) { into.append(page); return; }
+		page.append(el('p', 'pick a computer', 'agent-choose-title'));
+		const computers = el('div', null, 'agent-choose-row agent-choose-computers');
+		for (const group of computerChoices(machineRows, choosing.owner)) {
+			const name = group.kind === 'local' ? 'Local' : 'Cloud';
+			const option = el('button', name, 'agent-choose-option');
+			option.type = 'button'; option.dataset.computer = group.kind;
+			if (group.machine) option.dataset.owner = group.machine.id;
+			option.disabled = group.disabled;
+			option.setAttribute('aria-pressed', String(group.selected));
+			option.title = group.machine?.name || `${name} computer unavailable`;
+			option.onclick = () => { if (!building) void chooseOwner(group.machine.id); };
+			computers.append(option);
+		}
+		page.append(computers);
+		// More than one computer of a kind stays reachable without a second
+		// question. Offline inventory is visible but never an execution target.
+		const selectedGroup = computerChoices(machineRows, choosing.owner).find(group => group.selected);
+		if (selectedGroup?.rows.length > 1) {
+			const devices = el('select', null, 'agent-choose-machine');
+			devices.setAttribute('aria-label', `${selectedGroup.kind === 'local' ? 'Local' : 'Cloud'} computer`);
+			for (const machine of selectedGroup.rows) {
+				const option = el('option', machine.name + (!machine.self && !machine.reachable ? ' · offline' : ''));
+				option.value = machine.id; option.disabled = !machine.self && !machine.reachable;
+				option.selected = machine.id === choosing.owner;
+				devices.append(option);
+			}
+			devices.disabled = building;
+			devices.onchange = () => { void chooseOwner(devices.value); };
+			page.append(devices);
+		}
+		page.append(el('p', 'pick a harness', 'agent-choose-title'));
 		const options = el('div', null, 'agent-choose-row');
-		if (harnesses) {
-			page.append(el('p', 'pick a harness', 'agent-choose-title'));
-			// One that cannot start here says why (most often: not signed in).
-			for (const row of harnesses) {
-				const option = el('button', null, `agent-choose-option agent-choose-harness${row.ready ? '' : ' agent-choose-unready'}`);
-				option.type = 'button';
-				option.dataset.agent = row.agent;
-				option.disabled = !row.ready && !SIGN_IN[row.agent];
-				if (row.blocked) option.title = row.blocked;
-				option.append(harnessMark(row.agent), el('span', harnessName(row.agent) + (row.ready ? '' : ' · sign in')));
-				option.onclick = () => { if (row.ready) void chooseHarness(row.agent); else signInTo(row.agent); };
-				options.append(option);
-			}
-		} else {
-			page.append(el('p', 'pick a device', 'agent-choose-title'));
-			for (const machine of machineRows) {
-				const option = el('button', machine.name + (!machine.self && !machine.reachable ? ' · offline' : ''), 'agent-choose-option');
-				option.type = 'button';
-				option.dataset.owner = machine.id;
-				option.disabled = !machine.self && !machine.reachable;
-				option.onclick = () => { void chooseOwner(machine.id); };
-				options.append(option);
-			}
+		// Live inventory also updates sign-in readiness on this same blank page.
+		const harnesses = liveHarnesses(choosing.owner) ?? choosing.harnesses ?? [];
+		const revealed = building ? ['pi', 'claude', 'codex'].slice(0, Math.min(3, ASSEMBLY_STEPS.indexOf(assemblyStep) + 1)) : null;
+		for (const row of harnesses) {
+			if (revealed && !revealed.includes(row.agent)) continue;
+			const option = el('button', null, `agent-choose-option agent-choose-harness${row.ready ? '' : ' agent-choose-unready'}`);
+			option.type = 'button'; option.dataset.agent = row.agent;
+			if (building && row.agent !== 'pi' && !chooserAgentsSeen.has(row.agent)) option.classList.add('assembly-pop');
+			chooserAgentsSeen.add(row.agent);
+			option.disabled = !row.ready && !SIGN_IN[row.agent];
+			if (row.blocked) option.title = row.blocked;
+			option.append(harnessMark(row.agent), el('span', harnessName(row.agent) + (row.ready ? '' : ' · sign in')));
+			option.onclick = () => { if (!building) { if (row.ready) void chooseHarness(row.agent); else signInTo(row.agent); } };
+			options.append(option);
 		}
 		page.append(options);
 		if (choosing.error) page.append(el('p', choosing.error, 'agent-choose-error'));
-		const back = harnesses && choosing.devices ? 'esc for devices' : first ? '' : 'esc to cancel';
-		page.append(el('p', ['← → to move', 'enter to start', back].filter(Boolean).join(' · '), 'agent-choose-hint'));
-		if (!first || (harnesses && choosing.devices)) {
-			const cancel = el('button', harnesses && choosing.devices ? 'back' : 'cancel', 'agent-choose-cancel');
+		if (!first && !building) {
+			const cancel = el('button', 'cancel', 'agent-choose-cancel');
 			cancel.type = 'button'; cancel.disabled = creating;
 			cancel.onclick = cancelChoosing;
 			page.append(cancel);
@@ -833,6 +848,10 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		try {
 			const data = await (await fetch('/machines.json', { cache: 'no-store' })).json();
 			machineRows = data.machines ?? [];
+			if (choosing?.launch && !choosing.owner) {
+				const self = machineRows.find(machine => machine.self);
+				if (self) { choosing.owner = self.id; choosing.harnesses = liveHarnesses(self.id); }
+			}
 			usageAuthority = data.authority || '';
 			machinesKnown = true;
 			for (const [from, to] of [...draftAliases]) {
@@ -1253,6 +1272,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		return section;
 	}
 	function paintSessionRail() {
+		usageView?.syncActivity();
 		if (railSwiping) return;
 		const look = JSON.stringify([railCollapsed, historyCollapsed, historyLoading, wantedTab, Boolean(choosing), phone(),
 			sortedTabs().map(tab => [tab.id, tab.owner, tab.status, tab.agent, tab.model, tab.prompt, tab.offline, tab.focused]),
@@ -1549,8 +1569,8 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		workbench.focus();
 	}
 	// After a reload Workbench is at the folder it was, and the browser's
-	// tabs open again.
-	{
+	// tabs open again. The passive phone has neither to restore.
+	if (!launchPhone) {
 		const was = restoredView?.windows?.find(win => win.kind === 'files')?.at;
 		void workbench.open(was?.path || '', { base: was?.base, quiet: true });
 	}
@@ -1938,7 +1958,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		paintWork();
 		paintQueue();
 		// An extension asking a question outranks a picker we opened ourselves.
-		const ask = state.ui?.dialogs?.[0];
+		const ask = choosing?.launch ? null : state.ui?.dialogs?.[0];
 		if (!switching) for (const key of heldDialogs.keys()) {
 			const [session, id] = JSON.parse(key);
 			if (session === editorKey(state) && !(state.ui?.dialogs ?? []).some(item => item.id === id)) heldDialogs.delete(key);
@@ -2333,6 +2353,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		// rather than the last the other one gave, hours old.
 		let limitsHere = false;
 		usageView = mountUsage({
+			tabs: sortedTabs,
 			command: async (type, fields) => {
 				if (!machinesKnown) await refreshMachines();
 				const owner = usageTransport();
@@ -2756,10 +2777,16 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	// The composer is the terminal's standing keyboard target. Empty terminal
 	// space returns the caret, and a printable key repairs drifted focus before
 	// the browser dispatches that key to the newly focused input.
-	document.addEventListener('pointerdown', event => {
+	// Only a click returns it, never a press: a press is also how text is
+	// chosen, and taking the keys in the middle of that drag cleared what was
+	// being chosen (Noah: "really difficult to select text in imperfect").
+	// A click that chose nothing still brings the caret back.
+	document.addEventListener('click', event => {
 		if (!terminal?.contains(event.target) || wm.owns(event.target) || overlay || usageView?.isOpen || event.target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return;
-		requestAnimationFrame(() => { if (!getSelection()?.toString()) input.focus(); });
+		if (event.detail > 1) return; // a double or triple click chooses a word or a line
+		requestAnimationFrame(() => { if (!getSelection()?.toString()) input.focus({ preventScroll: true }); });
 	});
+	containChoosing(document);
 	document.addEventListener('keydown', event => {
 		if (wm.owns(document.activeElement) || overlay || usageView?.isOpen || document.activeElement === input || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
 		if (!hooks.canFocus?.() || event.target.closest?.('input, textarea, select, [contenteditable="true"], .screen-panel')) return;
@@ -2886,7 +2913,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	// A file or folder from the Mac's Finder or Dock (here) is this computer's.
 	globalThis.imperfectDesk?.onOpen?.(({ face, path, here }) => face === 'files' ? openFiles(path || '', here ? { base: '' } : {}) : newTab().catch(fail));
 	registerKeyBinding({ label: `${MOD}+Shift+B`, description: 'open or reveal the browser', code: 'KeyB', mod: true, shift: true, consumeRepeat: true, when: () => !keysHeld(), handler: windowKeys.browser });
-	registerKeyBinding({ label: `${MOD}+V`, description: 'what was copied, to copy again', code: 'KeyV', mod: true, when: event => clipHistory.available() && (!event || clipHistory.isOpen() || systemControls.isOpen() || !keysHeld()), handler: windowKeys.clipboard });
+	registerKeyBinding({ label: `${MOD}+${MOD === 'Super' ? 'Shift+' : ''}V`, description: 'what was copied, to copy again', code: 'KeyV', mod: true, shift: MOD === 'Super', when: event => clipHistory.available() && (!event || clipHistory.isOpen() || systemControls.isOpen() || !keysHeld()), handler: windowKeys.clipboard });
 	registerKeyBinding({ label: `${MOD}+W`, description: 'close the browser tab in front, or the window under the pointer', code: 'KeyW', mod: true, handler: windowKeys.close });
 	registerKeyBinding({ label: `${MOD}+←`, description: 'the next window out of sight on the left, with the keys', code: 'ArrowLeft', mod: true, consumeRepeat: true, when: event => !event || !keysHeld(), handler: windowKeys.previous });
 	registerKeyBinding({ label: `${MOD}+→`, description: 'the next window out of sight on the right, with the keys', code: 'ArrowRight', mod: true, consumeRepeat: true, when: event => !event || !keysHeld(), handler: windowKeys.next });
@@ -3018,7 +3045,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		// one fails what waits on it at once, rather than in half a minute.
 		for (const [owner, transport] of transports) {
 			if (transport.socket?.readyState === WebSocket.OPEN && away >= ASLEEP_MS && !localDesktop()) transport.close();
-			if (transport.socket?.readyState === WebSocket.OPEN) void transport.check({ fields: owner === LOCAL ? helloFields() : { kind: 'viewer', visible: true } });
+			if (transport.socket?.readyState === WebSocket.OPEN) void transport.check({ fields: owner === LOCAL ? helloFields() : { kind: 'viewer', visible: !launchPhone } });
 			else if (owner === selectedOwner || owner === LOCAL || machineRows.some(m => m.id === owner && m.reachable)) transport.connect();
 		}
 	}
@@ -3035,6 +3062,25 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	// window its computer wake.
 	globalThis.imperfectResume = () => resume({ force: true });
 	globalThis.imperfectDesk?.onResume?.(() => resume({ force: true }));
+	mountAssembly({ apply: step => {
+		assemblyStep = step;
+		document.documentElement.dataset.assemblyStep = step;
+		// This is a client-side blank page even when the computer has sessions.
+		// Opening it never focuses, creates or changes a server-side tab.
+		if (!choosing) choosing = { owner: hereOwner() || null, index: 0, auto: false, harnesses: null, agent: null, launch: true };
+		if (!launchPhone && ASSEMBLY_STEPS.indexOf(step) >= ASSEMBLY_STEPS.indexOf('files') && !assemblyFiles) {
+			assemblyFiles = true;
+			void workbench.open('', { base: '', quiet: true });
+			sidebarHooks.showFiles();
+		}
+		if (!launchPhone && ASSEMBLY_STEPS.indexOf(step) >= ASSEMBLY_STEPS.indexOf('browser') && !assemblyBrowser) {
+			assemblyBrowser = true;
+			void pages.assembleBrowser().catch(fail);
+		}
+		render();
+	} });
+	let assemblyFiles = false, assemblyBrowser = false;
+	mountLaunchOpen({ open: url => pages.openShop(url), canOpen: () => assemblyStep === 'done', onError: fail });
 	connect();
 
 	function reloadSafe() {
@@ -3045,7 +3091,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 
 	return {
 		submit,
-		ready: snapshotReady,
+		ready: Promise.all([snapshotReady, refreshMachines()]),
 		// Workbench, at a folder if one is named (a face=files window, or
 		// a folder opened from elsewhere).
 		openFiles,

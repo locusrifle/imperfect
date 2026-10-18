@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, rm, unlink, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createIncidentLedger, createWorkerLedger, invariantIds } from '../../../../system/pulse-ledger.mjs';
@@ -347,8 +348,35 @@ test('Pi JSON errors and aborts are not treated as successful process exits', ()
   assert.equal(reader.failed(), true);
 });
 
-test('a Mac takes the ledger lock with lockf(1), keeping the file; Linux with flock(1)', async () => {
+test('a Mac takes the ledger lock with lockf(1), keeping the file, or before macOS 15 with perl; Linux with flock(1)', async () => {
   const { lockCommand } = await import('../../../../system/pulse-ledger.mjs');
-  assert.deepEqual(lockCommand('/s/x.lock', ['node', '-e', '1'], 'darwin'), ['/usr/bin/lockf', ['-k', '-t', '30', '/s/x.lock', 'node', '-e', '1']]);
+  assert.deepEqual(lockCommand('/s/x.lock', ['node', '-e', '1'], 'darwin', { lockf: true }), ['/usr/bin/lockf', ['-k', '-t', '30', '/s/x.lock', 'node', '-e', '1']]);
+  const [perl, args] = lockCommand('/s/x.lock', ['node', '-e', '1'], 'darwin', { lockf: false });
+  assert.equal(perl, '/usr/bin/perl');
+  assert.deepEqual(args.slice(-5), ['/s/x.lock', '30', 'node', '-e', '1']);
   assert.deepEqual(lockCommand('/s/x.lock', ['node'], 'linux'), ['flock', ['--exclusive', '--timeout', '30', '/s/x.lock', 'node']]);
+  assert.deepEqual(lockCommand('/s/x.lock', ['node'], 'linux', { wait: 0 }), ['flock', ['--exclusive', '--timeout', '0', '/s/x.lock', 'node']]);
+});
+
+test('without lockf(1), as before macOS 15, perl holds the lock until its program ends, and a second waits or gives up', { skip: !existsSync('/usr/bin/perl') && 'no /usr/bin/perl here' }, async t => {
+  const { lockCommand } = await import('../../../../system/pulse-ledger.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'perl-lock-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'x.lock');
+  const hold = wait => {
+    const child = spawn(...lockCommand(path, ['bash', '-c', 'echo ready; read -r _ || true'], 'darwin', { lockf: false, wait }), { stdio: ['pipe', 'pipe', 'ignore'] });
+    const ended = new Promise(resolve => child.once('close', resolve));
+    const held = new Promise(resolve => { child.stdout.once('data', () => resolve(true)); child.once('close', () => resolve(false)); });
+    return { child, ended, held };
+  };
+  const first = hold(0);
+  assert.equal(await first.held, true);
+  const refused = hold(0);
+  assert.equal(await refused.held, false);
+  assert.equal(await refused.ended, 75);
+  const waiting = hold(5);
+  first.child.stdin.end();
+  assert.equal(await first.ended, 0);
+  assert.equal(await waiting.held, true, 'the lock passes on once its holder ends');
+  waiting.child.stdin.end();
+  assert.equal(await waiting.ended, 0);
 });

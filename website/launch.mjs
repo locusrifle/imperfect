@@ -2,20 +2,58 @@ import { config } from './launch-config.mjs?v=09347c5c';
 import { demoAddress, isDemoReady, waitForMedia, primeVideo, playVideo, firstVideoFrame, fadeDuration, preloadDue } from './media.mjs';
 import { createFilmLayer, warpTable } from './film.mjs';
 import { createLock, remembered, unlock } from './lock.mjs';
-import { createMac } from './mac/desktop.mjs?v=seamless-1';
+import { createMac } from './mac/desktop.mjs?v=clone-3';
+import { initShell, getShellWindow, setTrash } from './mac/shell.mjs?v=clone-3';
+import { initShop } from './shop.mjs?v=clone-3';
+import { createPhone } from './mac/phone.mjs?v=clone-3';
 const $ = id => document.getElementById(id);
 const video = $('film'), frame = $('computer'), reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const introScreen = $('introScreen'), filmScreen = $('filmScreen'), demoScreen = $('demoScreen');
 const lockScreen = $('lockScreen'), hint = $('hint'), announce = $('announce');
 const layer = createFilmLayer({ video, canvas: $('filmCanvas'), screen: filmScreen, area: $('filmArea') });
-const mac = createMac({ screen: $('macScreen'), curtain: $('curtain'), reduced, onstage: presentBuild, onfinish: finishMac });
+// Measurable behind the opener, still transparent and inert.
+$('macScreen').hidden = false;
+initShell({ stage: $('macScreen'), appWindow: document.querySelector('.mac-window'), frame, dock: document.querySelector('.mac-dock') });
+initShop({ open: openShop, restore: () => getShellWindow('imperfect')?.restore() });
+const phone = createPhone({ stage: $('macScreen'), appWindow: document.querySelector('.mac-window'), device: document.querySelector('.mac-phone'), frame: $('phoneComputer'), reduced });
+const mac = createMac({ screen: $('macScreen'), curtain: $('curtain'), reduced, onstage: assemble, onfinish: finishMac, ontrash: setTrash, onphone: phone.exhibit });
 video.src = config.videoUrl;
 let phase = 'loading', intro = null, introReady = false, openerDone = false, lockChecked = false;
 let workbench = null, demo = null, unlocked = false, primed = false, skipped = false;
 let generation = 0, pendingMedia = null, stallTimer = null, hintTimer = null, warp = null, skyLive = false;
 let demoLoaded = false, demoVerified = false, frameLoads = 0, frameAsk = 0, demoPreloadAt = null, ending = false, endingReady = false;
 let lastMediaTime = 0, pausedByVisibility = false;
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const ASSEMBLY = ['bare', 'claude', 'codex', 'files', 'browser', 'done'];
+let desiredStep = reduced.matches ? 'done' : 'bare', paintedStep = null;
+const assemblyHistory = [], assemblyWaiters = new Set();
+function waitForAssembly(step, ms = config.demoTimeoutMs) {
+  if (demoVerified && ASSEMBLY.indexOf(paintedStep) >= ASSEMBLY.indexOf(step)) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const waiter = { step, resolve: ok => { clearTimeout(waiter.timer); assemblyWaiters.delete(waiter); resolve(ok); } };
+    waiter.timer = setTimeout(() => waiter.resolve(false), ms); assemblyWaiters.add(waiter);
+  });
+}
+function sendAssembly() {
+  if (!demoVerified || !demo) return;
+  assemblyHistory.push({ step: desiredStep, sentAt: performance.now(), paintedAt: null });
+  frame.contentWindow.postMessage({ type: 'imperfect:assemble', step: desiredStep }, demo.origin);
+}
+function assemble(step) {
+  if (!ASSEMBLY.includes(step) || ASSEMBLY.indexOf(step) < ASSEMBLY.indexOf(desiredStep)) return Promise.resolve(false);
+  desiredStep = step;
+  if (paintedStep !== step) sendAssembly();
+  return waitForAssembly(step);
+}
+async function openShop(url) {
+  if (!demoVerified || paintedStep !== 'done') {
+    say('The Shop will open when your computer is ready.');
+    if (!await waitForAssembly('done')) { say('Your computer is not available yet. Try again, then open Shop.'); return false; }
+  }
+  if (!demoVerified || !demo || paintedStep !== 'done') return false;
+  frame.contentWindow.postMessage({ type: 'imperfect:open', url }, demo.origin);
+  say('Opening Shop in your computer’s browser.');
+  return true;
+}
 fetch(config.cuesUrl).then(r => r.ok ? r.json() : null).then(cues => { warp = cues ? warpTable(cues) : null; }).catch(() => {});
 function setPhase(next) {
   phase = next; document.body.dataset.phase = next;
@@ -125,12 +163,17 @@ function watchStall() {
 }
 async function showMac() {
   ++generation; clearStall(); hideHint(); setPhase('mac'); prompt(); say('A Mac, with your own app being built on it.');
-  await mac.reveal(); visible(filmScreen, false); galaxy(false); layer.stop(); mac.play();
+  if (!frame.getAttribute('src')) await requestDemo();
+  const ready = await waitForAssembly('bare');
+  await mac.reveal(); visible(filmScreen, false); galaxy(false); layer.stop();
+  if (ready) mac.play();
+  else { await mac.complete(); await finishMac(); }
 }
-// Refresh the one-minute ticket immediately before navigating. A hidden error document never replaces the preview.
+// Refresh the one-minute ticket immediately before navigating. An unverified
+// document is never displayed; there is no static imitation to swap in or out.
 async function requestDemo() {
   const ask = ++frameAsk;
-  demoVerified = demoLoaded = false; frameLoads = 0; mac.live(false); mac.present(false);
+  demoVerified = demoLoaded = false; paintedStep = null; frameLoads = 0; mac.live(false); mac.present(false);
   visible(demoScreen, false);
   const bench = await remembered();
   if (ask !== frameAsk || !workbench) return;
@@ -149,34 +192,45 @@ async function finishMac() {
   if (!frame.getAttribute('src')) await requestDemo();
   mac.finish();
   endingReady = true;
-  if (demoVerified) revealLive();
-  else { mac.offline(); say('Your computer is not available yet. The preview is still here.'); }
+  if (demoVerified && paintedStep === 'done') revealLive();
+  else { mac.offline(); say('Your computer is not available yet. Try again.'); }
 }
-// The last narrated capability IS the real app. Keep it inert while the goat
-// finishes, so the last resting frame and the first interactive frame are the
-// same document, at the same size, not a guess at cross-origin private state.
+// From bare through done, this is the same real document at the same size.
+// The build only adds the product's own capabilities; done enables interaction.
 function presentBuild() {
-  if (!demoVerified || !mac.state().built.includes('s-live')) return;
+  if (!demoVerified || !paintedStep) return;
   visible(demoScreen, true);
   demoScreen.inert = !endingReady;
   demoScreen.setAttribute('aria-hidden', String(!endingReady));
   mac.present(true);
 }
 function revealLive() {
-  if (!endingReady || !demoVerified) return;
+  if (!endingReady || !demoVerified || paintedStep !== 'done') return;
   presentBuild(); mac.live(true); setPhase('demo'); say('The computer is ready.');
 }
 frame.addEventListener('load', () => {
   if (!frame.getAttribute('src')) return;
-  if (++frameLoads > 1) { demoVerified = false; visible(demoScreen, false); mac.present(false); mac.live(false); if (ending) mac.offline(); }
+  if (++frameLoads > 1) { demoVerified = false; paintedStep = null; visible(demoScreen, false); mac.present(false); mac.live(false); if (ending) mac.offline(); }
   demoLoaded = true;
 });
 frame.addEventListener('error', () => {
-  demoVerified = false; visible(demoScreen, false); mac.present(false); mac.live(false); if (ending) mac.offline();
+  demoVerified = false; paintedStep = null; visible(demoScreen, false); mac.present(false); mac.live(false); if (ending) mac.offline();
 });
 addEventListener('message', event => {
-  if (!demo || !isDemoReady(event, frame, demo, config.demoReadyType)) return;
-  demoVerified = true; presentBuild(); if (ending) revealLive();
+  if (!demo || event.source !== frame.contentWindow || event.origin !== demo.origin) return;
+  if (isDemoReady(event, frame, demo, config.demoReadyType)) {
+    demoVerified = true; sendAssembly();
+    if (!skipped && !reduced.matches) phone.prepare(demo.origin);
+    return;
+  }
+  if (!demoVerified || event.data?.type !== 'imperfect:assembled') return;
+  const step = event.data.step;
+  if (!ASSEMBLY.includes(step) || ASSEMBLY.indexOf(step) > ASSEMBLY.indexOf(desiredStep) || ASSEMBLY.indexOf(step) < ASSEMBLY.indexOf(paintedStep)) return;
+  paintedStep = step;
+  const record = assemblyHistory.findLast(row => row.step === step && row.paintedAt === null);
+  if (record) record.paintedAt = performance.now();
+  for (const waiter of [...assemblyWaiters]) if (ASSEMBLY.indexOf(step) >= ASSEMBLY.indexOf(waiter.step)) waiter.resolve(true);
+  presentBuild(); if (ending) revealLive();
 });
 // Mounting a cross-origin page must not steal the lock's keyboard focus.
 let lastFocus = null;
@@ -187,8 +241,12 @@ addEventListener('blur', () => setTimeout(() => {
 }));
 async function openComputer() {
   intro?.quiet(); intro?.suspend(); video.pause(); layer.stop();
-  setPhase('mac'); await mac.reveal(); visible(filmScreen, false); galaxy(false);
-  await mac.complete(); await requestDemo(); await finishMac();
+  setPhase('mac');
+  desiredStep = 'done';
+  if (!frame.getAttribute('src')) await requestDemo();
+  await mac.complete(); await waitForAssembly('done');
+  await mac.reveal(); visible(filmScreen, false); galaxy(false);
+  await finishMac();
 }
 $('skip').addEventListener('click', event => {
   event.preventDefault(); skipped = true;
@@ -224,7 +282,7 @@ import('./intro/intro.mjs?v=mac-2').then(async module => {
 }).catch(() => { clearTimeout(introTimer); gaveUp(); });
 window.__launch = () => ({ phase, generation, videoTime: video.currentTime, videoPaused: video.paused, demoLoaded, demoVerified, demoPreloadAt,
   skyLive, film: layer.state(), lock: { shown: !lockScreen.hidden && !$('lock').hidden, state: lock.state, unlocked, workbench: workbench?.id ?? null, sky: lockScreen.dataset.sky === 'on' },
-  hint: hint.dataset.on === 'true', intro: intro?.state(), mac: mac.state() });
+  hint: hint.dataset.on === 'true', intro: intro?.state(), mac: mac.state(), phone: phone.state(), assembly: { desired: desiredStep, painted: paintedStep, history: assemblyHistory.map(row => ({ ...row })) } });
 window.__filmProbe = points => layer.probe(points);
 function fadeTimes() { for (const [name, ms] of [['--fade', config.fadeMs], ['--handoff', config.handoffMs], ['--unlock', config.unlockMs]]) document.documentElement.style.setProperty(name, `${fadeDuration(reduced.matches, ms)}ms`); }
 fadeTimes(); reduced.addEventListener('change', fadeTimes);

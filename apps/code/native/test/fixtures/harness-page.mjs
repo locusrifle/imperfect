@@ -56,12 +56,12 @@ export const FAKE_DESK = () => {
 // layout: the window's layout when a test is about the scrolling or dwindle
 // layouts. Like a native desk, a browser starts in focus; layout is an explicit
 // choice, legacyLayout an automatically saved reload from before browser focus.
-export async function harnessFixture({ desk = false, messages, viewport = { width: 1200, height: 900 }, hasTouch = false, machines = [], handleRequest = async () => false, onBrowserLive = null, site = false, themeCSS = '', browser: suppliedBrowser = null, layout = null, legacyLayout = null }) {
+export async function harnessFixture({ desk = false, messages, viewport = { width: 1200, height: 900 }, hasTouch = false, machines = [], handleRequest = async () => false, onBrowserLive = null, site = false, themeCSS = '', browser: suppliedBrowser = null, layout = null, legacyLayout = null, launchFrame = false, snapshot = {} }) {
   const root = new URL('../../public/', import.meta.url);
   const html = await readFile(new URL('index.html', root), 'utf8');
-  const index = site ? html : html.replace(/<script[^>]*src="\/js\/site.js"[^>]*><\/script>/, '');
+  const index = site || launchFrame ? html : html.replace(/<script[^>]*src="\/js\/site.js"[^>]*><\/script>/, '');
   const base = { agent: 'pi', sessionId: 'thread-a', cwd: '/fixture', model: { provider: 'fixture', id: 'fixture' }, queue: { items: [] }, stats: {}, ui: {}, tabs: [{ id: 'tab-a', sessionId: 'thread-a', focused: true, agent: 'pi', name: 'A', prompt: 'make a game', status: 'idle' }] };
-  const fixture = { tab: { ...base, busy: false, messages }, machines, commands: [], added: [], holds: [], started: [], poster: PNG, imageRequests: [], answer: () => undefined };
+  const fixture = { tab: { ...base, busy: false, messages, ...snapshot }, machines, commands: [], added: [], holds: [], started: [], poster: PNG, imageRequests: [], answer: () => undefined };
   const server = createServer(async (req, res) => {
     try {
       const path = new URL(req.url, 'http://fixture').pathname;
@@ -135,16 +135,30 @@ export async function harnessFixture({ desk = false, messages, viewport = { widt
       if (layout) localStorage.setItem('imperfect.layout-choice', layout);
       sessionStorage.setItem('imperfect.surface-code-view', JSON.stringify({ layout: legacyLayout || layout, oneLayout: true }));
     }, { layout, legacyLayout });
-    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    if (launchFrame) {
+      // Real parent/child origins and the production origin guard; only test
+      // transport is routed onto this isolated fixture, never production.
+      await page.route('https://imperfect.computer/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>html,body{margin:0}iframe{border:0;width:1200px;height:800px}</style><script>window.messages=[];addEventListener("message",e=>{if(e.source===document.querySelector("iframe")?.contentWindow&&e.origin==="https://noah.imperfect.computer")messages.push(e.data)});</script><iframe src="https://noah.imperfect.computer/"></iframe>' }));
+      await page.route('https://noah.imperfect.computer/**', async route => route.fulfill({ response: await route.fetch({ url: route.request().url().replace('https://noah.imperfect.computer', origin) }) }));
+      await page.addInitScript(socketOrigin => {
+        const Native = WebSocket;
+        globalThis.WebSocket = class extends Native { constructor(url, protocols) { super(String(url).replace('wss://noah.imperfect.computer', socketOrigin), protocols); } };
+      }, origin.replace(/^http/, 'ws'));
+    }
+    await page.goto(launchFrame ? 'https://imperfect.computer/assembly-fixture' : origin);
     if (desk) await page.evaluate(FAKE_DESK);
     // desk may say more of the window, as preload.cjs would: { altAlias: false } is sway.
     if (typeof desk === 'object') await page.evaluate(more => Object.assign(globalThis.imperfectDesk, more), desk);
-    if (!site) await page.evaluate(async () => {
+    if (!site && !launchFrame) await page.evaluate(async () => {
       const { mountGueyPi } = await import('/js/harness.js');
       window.harness = mountGueyPi({ hooks: { canFocus: () => true } });
     });
-    if (!site) await page.waitForFunction(() => harness.guiSnapshot().sessionId === 'thread-a');
-    await page.locator('#entry-output .gui-assistant').first().waitFor();
+    if (!site && !launchFrame) await page.waitForFunction(() => harness.guiSnapshot().sessionId === 'thread-a');
+    if (launchFrame) {
+      fixture.product = page.frame({ url: 'https://noah.imperfect.computer/' });
+      await fixture.product.locator('.agent-choose-harness[data-agent="pi"]').waitFor();
+    } else await page.locator('#entry-output .gui-assistant').first().waitFor();
     // A snapshot/attached transcript is not a painted, font-stable window.
     // Give every fixture the same settled starting frame; later transitions
     // remain real and are observed by the individual behaviour tests.

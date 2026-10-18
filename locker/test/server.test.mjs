@@ -104,10 +104,9 @@ test('every host serves the cinematic launch, with retained handoff pages and na
         assert.equal(part.status, 200, `${host}${path}`);
         assert.equal(part.headers.get('content-type'), 'text/html; charset=utf-8');
       }
-      // Renting and the code are one page; the old rent address goes there.
       const moved = await call('shop.test', '/rent.html');
-      assert.equal(moved.status, 301); assert.equal(moved.headers.get('location'), '/buy');
-      assert.match(await (await call('shop.test', '/buy')).text(), /href=["']\/account["']/);
+      assert.equal(moved.status, 302); assert.equal(moved.headers.get('location'), '/');
+      assert.equal((await call('shop.test', '/shop/offer')).status, 200);
       const hostPage = await (await call(host, '/host.html')).text();
       assert.match(hostPage, /400/);
       assert.doesNotMatch(hostPage, /<form\b|checkout\.stripe\.com/i, 'new self-host offer does not submit to legacy checkout');
@@ -161,15 +160,15 @@ test('every host serves the cinematic launch, with retained handoff pages and na
     // The store borrows the website's typeface and black hole under /assets/.
     for (const path of ['/assets/js/wte/ttfx.wasm', '/assets/fonts/omarchy-font.ttf', '/assets/js/sequence.js']) assert.equal((await call('shop.test', path)).status, 200, path);
     assert.equal((await call('shop.test', '/shared/locker.css')).status, 200);
-    // The buy page plays the black hole (WebAssembly) and frames nothing.
-    const csp = (await call('shop.test', '/buy')).headers.get('content-security-policy');
+    // The Stripe return page frames nothing.
+    const csp = (await call('shop.test', '/shop/thanks')).headers.get('content-security-policy');
     assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'/);
     assert.match(csp, /frame-src 'none';/);
     assert.match(csp, /form-action 'self' https:\/\/checkout\.stripe\.com;/);
     // What may be kept, and for how long: scripts a page names with ?v=
     // briefly, anything asked for bare never unchecked; a page with a key in
     // it never.
-    assert.equal((await call('shop.test', '/buy.js?v=1')).headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=86400');
+    assert.equal((await call('shop.test', '/shop-thanks.js?v=1')).headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=86400');
     assert.equal((await call('shop.test', '/engine.js')).headers.get('cache-control'), 'no-cache');
     // The website's link preview and icons are the store's.
     for (const path of ['/og.png', '/goat.png', '/apple-touch-icon.png', '/favicon.ico']) assert.equal((await call('shop.test', path)).status, 200, path);
@@ -189,21 +188,15 @@ test('every host serves the cinematic launch, with retained handoff pages and na
   } finally { await app.close(); }
 });
 
-test('buying sends the browser to Stripe, and thanks issues the key and the sentence once paid', async () => {
+test('retired checkout cannot start new charges; legacy thanks still issues the key once paid', async () => {
   const stripe = fakeStripe();
   const { app, call, store } = await boot({ stripe });
   try {
-    // The page offers the rental (closed until billing is configured) and the code, US$150 once, whose checkout is POST /buy.
-    const details = await (await call('shop.test', '/buy')).text();
-    assert.match(details, /data-billing="closed"/);
-    assert.match(details, /data-code="open"/);
-    assert.deepEqual([...details.matchAll(/<form\b[^>]*>/gi)].map(m => m[0]), ['<form method="post" action="/buy">']);
-    const buy = await call('www.shop.test', '/buy', form({ email: 'locus@example.com' }));
-    assert.equal(buy.status, 303);
-    assert.equal(buy.headers.get('location'), 'https://checkout.stripe.com/c/cs_1');
-    assert.equal(stripe.sessions.get('cs_1').params.mode, 'payment');
-    assert.equal(stripe.sessions.get('cs_1').params.customer_email, 'locus@example.com');
-    assert.match(stripe.sessions.get('cs_1').params.success_url, /^http:\/\/shop\.test\/thanks\?session_id=/);
+    assert.equal((await call('shop.test', '/buy')).status, 302);
+    assert.equal((await call('shop.test', '/buy', form({ email: 'locus@example.com' }))).status, 404);
+    assert.equal(stripe.sessions.size, 0);
+    // A Checkout Session created before the source became free.
+    await stripe.checkoutSession({ metadata: { product: 'code' } });
 
     assert.equal((await call('shop.test', '/thanks?session_id=cs_1')).status, 402);
 
@@ -218,31 +211,22 @@ test('buying sends the browser to Stripe, and thanks issues the key and the sent
     assert.match(await (await call('shop.test', '/thanks?session_id=cs_1')).text(), new RegExp(key));
 
     // A 100% promotion code: nothing to pay, and the repo opens all the same.
-    await call('www.shop.test', '/buy', form({ email: 'gift@example.com' }));
+    await stripe.checkoutSession({ metadata: { product: 'code' } });
     stripe.sessions.get('cs_2').paid = { id: 'cs_2', payment_status: 'no_payment_required', status: 'complete', metadata: { product: 'code' }, customer: 'cus_2', customer_details: { email: 'gift@example.com' } };
     assert.equal((await call('shop.test', '/thanks?session_id=cs_2')).status, 200);
     assert.ok(store.licenseBySession('cs_2'));
 
-    const cross = await call('shop.test', '/buy', { ...form({ email: 'x@example.com' }), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.test' } });
-    assert.equal(cross.status, 403);
-    const sibling = await call('shop.test', '/buy', { ...form({ email: 'x@example.com' }), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'http://www.shop.test' } });
-    assert.equal(sibling.status, 303);
   } finally { await app.close(); }
 });
 
-test('with the till shut, buying asks for an address, and the address waits for the till', async () => {
+test('retired buy addresses stay retired without Stripe, and notification addresses can still wait', async () => {
   const { app, call, store } = await boot({ stripe: null });
   try {
     const details = await call('shop.test', '/buy');
-    assert.equal(details.status, 200);
-    const shut = await details.text();
-    assert.match(shut, /Monthly billing is not open yet/);
-    assert.match(shut, /data-code="closed"/, 'the code says its checkout is not open');
+    assert.equal(details.status, 302);
+    assert.equal(details.headers.get('location'), '/');
     const closed = await call('shop.test', '/buy', form({}));
-    assert.equal(closed.status, 503);
-    const closedPage = await closed.text();
-    assert.match(closedPage, /<form class="notify" method="post" action="\/notify">[\s\S]*notify me when it opens/);
-    assert.match(closedPage, /<a class="button quiet" href="\/">back to the computer<\/a>/);
+    assert.equal(closed.status, 404);
     const done = await call('shop.test', '/notify', form({ email: ' Someone@Example.com ' }));
     assert.equal(done.status, 200);
     assert.match(await done.text(), /someone@example\.com gets one email/);
@@ -297,7 +281,8 @@ test('pinned downloads and the phone link open only to a live key', async () => 
     assert.equal(phone.headers.get('content-type'), 'application/vnd.android.package-archive');
     assert.match(phone.headers.get('content-disposition'), /imperfect-code\.apk/);
     assert.equal((await call('shop.test', `/android?key=ic_${'0'.repeat(40)}`)).status, 403);
-    for (const gone of ['/install', '/release/manifest.json', '/computer-setup']) assert.equal((await call('shop.test', `${gone}?key=${license.key}`)).status, 404);
+    assert.equal((await call('shop.test', '/install')).status, 200, 'public GitHub installer needs no membership key');
+    for (const gone of ['/release/manifest.json', '/computer-setup']) assert.equal((await call('shop.test', `${gone}?key=${license.key}`)).status, 404);
   } finally { await app.close(); }
 });
 

@@ -91,10 +91,16 @@ test('existing static locker serves launch modules and exact MP4 byte ranges wit
   assert.doesNotMatch(front.headers['content-security-policy'], /unsafe-inline|\*/);
   assert.equal(front.headers['referrer-policy'], 'same-origin');
   assert.match(front.body.toString(), /referrerpolicy="strict-origin-when-cross-origin"/);
-  for (const path of ['/launch.mjs','/launch-config.mjs','/media.mjs','/intro/intro.mjs','/boot/sequence.mjs','/boot/scroll.mjs']) {
+  for (const path of ['/launch.mjs','/launch-config.mjs','/media.mjs','/intro/intro.mjs','/boot/sequence.mjs','/boot/scroll.mjs','/mac/desktop.mjs','/mac/shell.mjs','/mac/phone.mjs','/shop.mjs']) {
     const response = await get(path); assert.equal(response.status, 200, path);
     assert.equal(response.headers['content-type'], 'text/javascript; charset=utf-8');
   }
+  const phoneVoice = await get('/mac/sounds/line-phone.m4a');
+  assert.equal(phoneVoice.status, 200); assert.equal(phoneVoice.headers['content-type'], 'audio/mp4');
+  assert.deepEqual(phoneVoice.body, await website('mac/sounds/line-phone.m4a'));
+  const voices = await get('/mac/sounds/voice.json');
+  assert.equal(voices.status, 200);
+  assert.ok(JSON.parse(voices.body).lines.some(line => line.voice === 'mac/sounds/line-phone.m4a' && line.text === "And it's on your phone."));
   const film = await website(FILM);
   const full = await get('/' + FILM);
   assert.equal(full.status, 200); assert.equal(full.headers['content-type'], 'video/mp4');
@@ -107,9 +113,32 @@ test('existing static locker serves launch modules and exact MP4 byte ranges wit
   }
   const invalid = await get('/' + FILM, { range:`bytes=${film.length}-` });
   assert.equal(invalid.status, 416); assert.equal(invalid.headers['content-range'], `bytes */${film.length}`);
-  for (const path of ['/host.html','/buy']) assert.equal((await get(path)).status, 200, path);
-  assert.equal((await get('/rent.html')).status, 301, '/rent.html moved to /buy');
-  for (const path of ['/world.html', '/galaxy.mjs', '/media/v4-launch.mp4']) assert.equal((await get(path)).status, 404, `${path}: gone`);
+  assert.equal((await get('/host.html')).status, 200);
+  const shopHTML = await readFile(new URL('../public/store/shop.html', import.meta.url));
+  for (const path of ['/shop', '/shop?os=mac', '/shop?os=linux', '/shop?os=windows', '/shop?os=mobile']) {
+    const page = await get(path);
+    assert.equal(page.status, 200, `${path}: the Shop is a real standalone page`);
+    assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
+    assert.equal(page.headers['cache-control'], 'no-store');
+    assert.deepEqual(page.body, shopHTML);
+    const csp = page.headers['content-security-policy'];
+    assert.match(csp, /script-src 'self'(?: [^;]+)?;/);
+    assert.match(csp, /style-src 'self';/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.doesNotMatch(csp, /unsafe-inline|\*/);
+    assert.doesNotMatch(page.body.toString(), /<iframe\b|mac\/|<script\b[^>]*>\s*[^<\s]/i);
+  }
+  for (const [path, type] of [['/shop.js', 'text/javascript; charset=utf-8'], ['/shop.css', 'text/css; charset=utf-8'], ['/shop-platform.mjs', 'text/javascript; charset=utf-8'], ['/shop-thanks.js', 'text/javascript; charset=utf-8']]) {
+    const asset = await get(path);
+    assert.equal(asset.status, 200, path);
+    assert.equal(asset.headers['content-type'], type, `${path}: executable under nosniff and strict CSP`);
+    assert.deepEqual(asset.body, await readFile(new URL('../public/store' + path, import.meta.url)));
+  }
+  for (const path of ['/buy', '/buy.html', '/rent.html']) {
+    const moved = await get(path);
+    assert.equal(moved.status, 302); assert.equal(moved.headers.location, '/');
+  }
+  for (const path of ['/world.html', '/galaxy.mjs', '/media/v4-launch.mp4', '/mac/app.html', '/mac/browser-page.webp', '/mac/shop.mjs', '/mac/shop.css']) assert.equal((await get(path)).status, 404, `${path}: gone`);
   // The lock's door: with no lock file every password is refused, the same as a wrong one.
   const unlock = await get('/unlock'); assert.equal(unlock.status, 401); assert.deepEqual(JSON.parse(unlock.body), { ok:false });
 });

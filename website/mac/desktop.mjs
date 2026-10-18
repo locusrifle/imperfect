@@ -1,243 +1,193 @@
-// A Mac hosts one window throughout. Apps fold INTO it; the last narrated build part
-// is the verified real app, held inert until the voice finishes. No resized window,
-// crossfade, or copied private product state is needed across the origin boundary.
-export const INTRO = { voice: 'mac/sounds/line-0.m4a', durationMs: 6000 };
+// The pointer assembles the real desktop. A brief inert phone view shares its computer.
+export const VOICE_RATE = .8;
+export const INTRO = { text: "This is a Mac. And this is imperfect. Let's build it.", voice: 'mac/sounds/line-0.m4a', durationMs: 4720 };
 export const STEPS = [
-  { line: 'we wrap the harnesses', voice: 'mac/sounds/line-1.m4a', durationMs: 9760, apps: ['claude', 'chatgpt'], build: 's-harness' },
-  { line: 'we wrap the files', voice: 'mac/sounds/line-2.m4a', durationMs: 6960, apps: ['finder'], build: 's-files' },
-  { line: 'we put a browser in', voice: 'mac/sounds/line-3.m4a', durationMs: 8240, apps: ['safari'], build: 's-browser' },
-  { line: 'we wrap your messages', voice: 'mac/sounds/line-4.m4a', durationMs: 5680, apps: ['kinso'], build: 's-messages' },
-  { line: 'it remembers', voice: 'mac/sounds/line-5.m4a', durationMs: 10080, holdMs: 8000, apps: ['notes'], build: 's-memory' },
-  { line: 'it makes things', voice: 'mac/sounds/line-6.m4a', durationMs: 8480, apps: ['imovie'], build: 's-make' },
-  { line: 'every change can be undone', voice: 'mac/sounds/line-7.m4a', durationMs: 5760, holdMs: 7000, apps: ['time-machine'], build: 's-undo' },
-  { line: 'it goes where you go', voice: 'mac/sounds/line-8.m4a', durationMs: 5440, apps: [], build: 's-everywhere' },
-  { line: 'your own operating system', voice: 'mac/sounds/line-9.m4a', durationMs: 12000, apps: [], build: 's-live' },
+  { text: 'Drop in Claude Code.', voice: 'mac/sounds/line-1.m4a', durationMs: 1680, apps: ['claude'], build: 'claude' },
+  { text: 'Then ChatGPT.', voice: 'mac/sounds/line-2.m4a', durationMs: 1840, apps: ['chatgpt'], build: 'codex' },
+  { text: 'Your files.', voice: 'mac/sounds/line-3.m4a', durationMs: 1200, apps: ['finder'], build: 'files' },
+  { text: 'And a browser.', voice: 'mac/sounds/line-4.m4a', durationMs: 1120, apps: ['safari'], build: 'browser' },
+  { text: "And it's on your phone.", voice: 'mac/sounds/line-phone.m4a', durationMs: 1520, apps: [], phone: true },
+  { text: "Now that software is one sentence away, you don't need apps other people made.", voice: 'mac/sounds/line-5.m4a', durationMs: 4720, apps: ['final-cut', 'imovie', 'notes'], trash: true },
+  { text: "It's yours.", voice: 'mac/sounds/line-6.m4a', durationMs: 1120, apps: [], build: 'done' },
 ];
-// Reuse the existing short Dock drop sound; no generated sound or new asset.
 export const DROP_SOUND = 'mac/sounds/drag-to-trash.m4a';
-// The Mac's screen, in its points: the page is fitted to it. The arrow's hot spot, in its points (NSCursor.arrow).
-const SCREEN = { w: 1440, h: 900 }, HOT = { x: 4, y: 4 };
+export const SCREEN = { w: 1600, h: 900 };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const between = (a, b) => a + Math.random() * (b - a);
+const clamp = x => Math.max(0, Math.min(1, x));
 
-export function createMac({ screen, curtain, reduced, onstage, onfinish }) {
-  const frame = screen.querySelector('iframe'), line = screen.querySelector('.mac-line'), clock = screen.querySelector('.mac-clock');
-  const dock = screen.querySelector('.mac-dock'), arrow = screen.querySelector('.mac-cursor');
-  let prepared = false, revealed = false, step = -1, built = [], absorbed = [], appReady = null, played = false;
-  let us = 1, x = 0, y = 0, hosted = false, live = false, stopped = false, finished = false;
+export function createMac({ screen, curtain, reduced, onstage, onfinish, ontrash, onphone }) {
+  const frame = screen.querySelector('#computer'), arrow = screen.querySelector('.mac-cursor');
+  let prepared = false, revealed = false, played = false, stopped = false, finished = false;
+  let step = -1, built = [], absorbed = [], trashed = [], hosted = false, live = false, x = 850, y = 450;
+  let voiceCancel = null;
   const voicePlayer = new Audio(), dropPlayer = new Audio();
   voicePlayer.preload = dropPlayer.preload = 'auto';
   voicePlayer.src = INTRO.voice; dropPlayer.src = DROP_SOUND;
-  // Both players are activated in the password gesture, before any network answer.
+  voicePlayer.playbackRate = VOICE_RATE;
   function prime() {
     for (const audio of [voicePlayer, dropPlayer]) {
       audio.muted = true;
-      audio.play().then(() => { audio.pause(); audio.currentTime = 0; audio.muted = false; }).catch(() => { audio.muted = false; });
+      audio.play().then(() => { if (played) return; audio.pause(); audio.currentTime = 0; audio.muted = false; }).catch(() => { audio.muted = false; });
     }
   }
-
-  function fit() {
-    us = Math.min(innerWidth / SCREEN.w, innerHeight / SCREEN.h);
-    screen.style.setProperty('--us', String(us));
-  }
-  // The clock says the visitor's own time, as the Mac's does.
-  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
-  function tick() {
-    const now = new Date();
-    clock.textContent = `${day.format(now).replace(',', '')} ${time.format(now)}`;
-  }
-  // Ready behind the film: the window's page and the pictures load while it plays.
+  function fit() { screen.style.setProperty('--scale', String(Math.min(innerWidth / SCREEN.w, innerHeight / SCREEN.h))); }
   function prepare() {
     if (prepared) return;
-    prepared = true;
-    fit(); tick();
-    addEventListener('resize', fit);
-    setInterval(tick, 10_000);
-    screen.hidden = false;
-    appReady = new Promise(resolve => {
-      frame.addEventListener('load', () => resolve(frame.contentDocument), { once: true });
-      frame.src = frame.dataset.src;
-    });
+    prepared = true; fit(); addEventListener('resize', fit); screen.hidden = false;
   }
-  // The film's frame goes up; the Mac was under it.
   async function reveal() {
-    prepare();
-    revealed = true;
+    if (revealed) return;
+    prepare(); revealed = true;
     screen.dataset.visible = 'true'; screen.setAttribute('aria-hidden', 'false'); screen.inert = false;
-    point(innerWidth * .56, innerHeight * .48);
+    point(850, 450);
     const ms = reduced.matches ? 0 : 1500;
     document.body.style.setProperty('--rise-ms', `${ms}ms`);
-    curtain.hidden = false;
-    document.body.dataset.curtain = 'down';
-    void curtain.offsetHeight;
-    document.body.dataset.curtain = 'up';
-    await delay(ms + 50);
-    curtain.hidden = true;
+    curtain.hidden = false; document.body.dataset.curtain = 'down'; void curtain.offsetHeight;
+    document.body.dataset.curtain = 'up'; await delay(ms + (ms ? 40 : 0)); curtain.hidden = true;
   }
-
-  // The pointer: macOS's arrow, its tip where it points.
-  function point(px, py) {
-    x = px; y = py;
-    arrow.style.translate = `${px - HOT.x * us}px ${py - HOT.y * us}px`;
+  function point(px, py) { x = px; y = py; arrow.style.translate = `${px - 4}px ${py - 4}px`; }
+  function localRect(el) {
+    const r = el.getBoundingClientRect(), stage = screen.getBoundingClientRect(), scale = stage.width / SCREEN.w;
+    return { left: (r.left - stage.left) / scale, top: (r.top - stage.top) / scale, width: r.width / scale, height: r.height / scale };
   }
-  // A hand's way there: a slight curve (or one by a given point), quick in the middle, settling at the end.
-  function move(tx, ty, ms, along, via) {
-    if (reduced.matches) { point(tx, ty); along?.(tx, ty); return Promise.resolve(); }
-    const sx = x, sy = y, dx = tx - sx, dy = ty - sy, length = Math.hypot(dx, dy) || 1;
-    const bend = (Math.random() < .5 ? -1 : 1) * Math.min(50 * us, length * .1);
-    const cx = via?.x ?? sx + dx / 2 - dy / length * bend, cy = via?.y ?? sy + dy / 2 + dx / length * bend;
+  const centre = el => { const r = localRect(el); return { x: r.left + r.width / 2, y: r.top + r.height / 2, r }; };
+  const tileOf = name => screen.querySelector(`.mac-dock [data-app="${name}"]`);
+  function move(tx, ty, ms, along) {
+    const sx = x, sy = y;
+    if (reduced.matches || stopped) { point(tx, ty); along?.(tx, ty); return Promise.resolve(); }
     return new Promise(resolve => {
       const start = performance.now();
-      const frameAt = now => {
-        const t = Math.min(1, (now - start) / ms), e = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
-        const px = (1 - e) ** 2 * sx + 2 * (1 - e) * e * cx + e * e * tx, py = (1 - e) ** 2 * sy + 2 * (1 - e) * e * cy + e * e * ty;
-        point(px, py); along?.(px, py);
-        if (t < 1) requestAnimationFrame(frameAt); else resolve();
+      const tick = now => {
+        const t = clamp((now - start) / ms), e = t * t * (3 - 2 * t);
+        point(sx + (tx - sx) * e, sy + (ty - sy) * e); along?.(x, y);
+        if (t < 1 && !stopped) requestAnimationFrame(tick); else resolve();
       };
-      requestAnimationFrame(frameAt);
+      requestAnimationFrame(tick);
     });
   }
-  const tileOf = name => dock.querySelector(`.mac-tile[data-app="${name}"]`);
-  const centre = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, r }; };
-  const travel = (tx, ty) => Math.min(1100, 380 + Math.hypot(tx - x, ty - y) * .9 / Math.max(us, .5));
-  // Its place in the Dock closes, as the Dock's icons slide together.
-  function close(tile) {
-    tile.animate([{ width: getComputedStyle(tile).width }, { width: '0px' }], { duration: reduced.matches ? 1 : 420, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
-  }
-  // One app, from the Dock into the window, never towards the Trash.
-  async function intoWindow(name) {
-    const tile = tileOf(name), icon = tile?.querySelector('img');
-    if (!icon) return;
-    const at = centre(icon), grab = { x: at.x + between(-6, 6) * us, y: at.y + between(-2, 8) * us };
-    await move(grab.x, grab.y, travel(grab.x, grab.y));
-    await delay(reduced.matches ? 0 : 120);
-    icon.classList.add('mac-dim'); // pressed
-    await delay(reduced.matches ? 0 : 170);
-    if (stopped) { icon.classList.remove('mac-dim'); return; }
-    // Picked up: the icon goes with the pointer, held where it was taken.
-    const ghost = icon.cloneNode();
-    ghost.className = 'mac-ghost';
-    for (const [key, value] of Object.entries({ left: at.r.left, top: at.r.top, width: at.r.width, height: at.r.height })) ghost.style[key] = `${value}px`;
-    screen.append(ghost);
-    icon.style.visibility = 'hidden'; icon.classList.remove('mac-dim');
-    if (tile.querySelector('.mac-run')) tile.querySelector('.mac-run').style.visibility = 'hidden';
-    let out = false;
-    const top = dock.getBoundingClientRect().top;
-    const carry = (px, py) => {
-      ghost.style.translate = `${px - grab.x}px ${py - grab.y}px`;
-      if (!out && py < top - 6 * us) { out = true; close(tile); }
+  // Audio's own clock drives the flight. Buffering pauses the icon too; the last
+  // frame lands on ended, not on an independent approximation of the line.
+  function sound(line) {
+    voicePlayer.src = line.voice; voicePlayer.currentTime = 0; voicePlayer.playbackRate = VOICE_RATE; voicePlayer.muted = false;
+    let over = false, failed = false, failedAt = 0, resolve, timer;
+    const done = new Promise(ok => { resolve = ok; });
+    const finishVoice = () => {
+      if (over) return; over = true; clearTimeout(timer);
+      voicePlayer.removeEventListener('ended', finishVoice); voicePlayer.removeEventListener('error', fail);
+      if (voiceCancel === cancel) voiceCancel = null;
+      resolve();
     };
-    const win = frame.getBoundingClientRect();
-    const target = { x: win.left + win.width * between(.42, .58), y: win.top + win.height * .48 };
-    screen.dataset.dragging = name;
-    await move(target.x, target.y, Math.max(900, travel(target.x, target.y)), carry);
-    if (!out) close(tile);
-    if (stopped) { ghost.remove(); delete screen.dataset.dragging; return; }
-    // The drop is inspectable at real window coordinates, including reduced motion.
-    screen.dispatchEvent(new CustomEvent('imperfect:drop', { bubbles: true, detail: { name, x: target.x, y: target.y } }));
-    await delay(reduced.matches ? 0 : 160);
-    sound(DROP_SOUND);
-    absorbed.push(name);
-    await ghost.animate([{ scale: '1', opacity: 1 }, { scale: '.12', opacity: 0 }], { duration: reduced.matches ? 1 : 260, easing: 'ease-in', fill: 'forwards' }).finished;
-    ghost.remove(); delete screen.dataset.dragging;
-    await delay(reduced.matches ? 0 : 220);
+    const fail = () => {
+      if (failed || over) return; failed = true; failedAt = performance.now();
+      clearTimeout(timer); timer = setTimeout(finishVoice, line.durationMs / VOICE_RATE);
+    };
+    const cancel = () => { voicePlayer.pause(); finishVoice(); };
+    voiceCancel = cancel;
+    voicePlayer.addEventListener('ended', finishVoice, { once: true }); voicePlayer.addEventListener('error', fail, { once: true });
+    // A network-stalled sound is bounded; it cannot strand the desktop forever.
+    timer = setTimeout(cancel, line.durationMs / VOICE_RATE + 15000);
+    voicePlayer.play().catch(fail);
+    return { done, get over() { return over; }, progress() { return over ? 1 : failed ? clamp((performance.now() - failedAt) / (line.durationMs / VOICE_RATE)) : clamp(voicePlayer.currentTime * 1000 / line.durationMs); } };
   }
-  function build(doc, part) {
+  function build(part) {
     if (!built.includes(part)) built.push(part);
-    doc.documentElement.classList.add(part);
-    if (part === 's-live') arrow.hidden = true;
-    onstage?.(part);
-    if (part === 's-memory') {
-      screen.dataset.story = 'true';
-      doc.querySelector('[data-page]')?.classList.remove('active');
-    }
-    for (const film of doc.querySelectorAll('video')) {
-      if (part === 's-make') { film.currentTime = 77; film.play().catch(() => {}); }
-      else film.pause();
-    }
-    // The browser's page is the one open now: the sidebar says so.
-    if (part === 's-browser') {
-      doc.querySelector('[data-home]')?.classList.remove('active');
-      doc.querySelector('[data-page]')?.classList.add('active');
-    }
+    return onstage?.(part);
   }
-  function say(text) {
-    line.textContent = text;
-    line.dataset.on = String(Boolean(text));
+  function consume(tile, name, trash) {
+    tile.classList.add('mac-consumed'); tile.setAttribute('aria-hidden', 'true');
+    if (trash) { if (!trashed.includes(name)) trashed.push(name); ontrash?.([...trashed]); }
+    else if (!absorbed.includes(name)) absorbed.push(name);
   }
-  // Voice completion, not just a timer: a buffering line must finish before the next one starts.
-  // A failed/blocked sound still keeps its measured reading time and the on-screen line.
-  async function sound(src, durationMs = 0) {
-    if (stopped) return;
-    const audio = src === DROP_SOUND ? dropPlayer : voicePlayer;
-    audio.src = src; audio.muted = false;
-    if (!durationMs) { audio.play().catch(() => {}); return; }
-    const finished = new Promise(resolve => {
-      const done = () => { clearTimeout(timeout); audio.removeEventListener('ended', done); audio.removeEventListener('error', done); resolve(); };
-      const timeout = setTimeout(done, durationMs + 20000);
-      audio.addEventListener('ended', done, { once: true }); audio.addEventListener('error', done, { once: true });
-      audio.play().catch(done);
+  function drop(name, tile, ghost, target, part, trash) {
+    if (stopped) { ghost.remove(); return; }
+    point(target.x, target.y);
+    // Sound and protocol send share this exact drop task. The product paints its
+    // own option/pane, then acknowledges after two frames (measured by launch).
+    dropPlayer.muted = false; dropPlayer.currentTime = 0; dropPlayer.play().catch(() => {});
+    const painted = part ? build(part) : null;
+    consume(tile, name, trash);
+    const stage = screen.getBoundingClientRect(), scale = stage.width / SCREEN.w;
+    screen.dispatchEvent(new CustomEvent('imperfect:drop', { bubbles: true, detail: { name, step: part ?? null, trash, x: stage.left + target.x * scale, y: stage.top + target.y * scale, at: performance.now() } }));
+    ghost.animate([{ scale: '1', opacity: 1 }, { scale: '.12', opacity: 0 }], { duration: 160, easing: 'ease-in', fill: 'forwards' }).finished.finally(() => ghost.remove());
+    delete screen.dataset.dragging;
+    return painted;
+  }
+  async function pick(name) {
+    const tile = tileOf(name), icon = tile?.querySelector('img');
+    if (!icon) return null;
+    const at = centre(icon);
+    await move(at.x, at.y, Math.min(720, 220 + Math.hypot(at.x - x, at.y - y) * .65));
+    if (stopped) return null;
+    const ghost = icon.cloneNode(); ghost.className = 'mac-ghost';
+    Object.assign(ghost.style, { left: `${at.r.left}px`, top: `${at.r.top}px`, width: `${at.r.width}px`, height: `${at.r.height}px` });
+    screen.append(ghost); icon.style.visibility = 'hidden'; screen.dataset.dragging = name;
+    // Close the Dock gap on pickup, not on impact: the Trash must not jump
+    // sideways out from under the carried icon on the drop/sound frame.
+    tile.classList.add('mac-consumed');
+    const carry = (px, py) => { ghost.style.translate = `${px - at.x}px ${py - at.y}px`; };
+    return { tile, ghost, carry, start: at };
+  }
+  function flight(held, target, spoken, from, to) {
+    const sx = x, sy = y;
+    return new Promise(resolve => {
+      const tick = () => {
+        if (stopped) { held.ghost.remove(); resolve(); return; }
+        const progress = spoken.progress();
+        const t = spoken.over || progress >= to || from >= to ? 1 : clamp((progress - from) / (to - from));
+        const e = t * t * (3 - 2 * t);
+        point(sx + (target.x - sx) * e, sy + (target.y - sy) * e - Math.sin(t * Math.PI) * 40); held.carry(x, y);
+        if (t < 1) requestAnimationFrame(tick); else resolve();
+      };
+      requestAnimationFrame(tick);
     });
-    await Promise.all([finished, delay(durationMs)]);
-    audio.pause();
   }
-  function finish() {
-    finished = true; arrow.hidden = true; say('');
+  async function intoWindow(s) {
+    const held = await pick(s.apps[0]); if (!held || stopped) return;
+    const win = localRect(frame), target = { x: win.left + win.width * .47, y: win.top + win.height * .48 };
+    const spoken = sound(s);
+    await flight(held, target, spoken, 0, 1); await spoken.done;
+    await drop(s.apps[0], held.tile, held.ghost, target, s.build, false);
   }
-  function present(on) {
-    hosted = on; screen.dataset.hosted = String(on);
-    if (on) screen.querySelector('.mac-offline').hidden = true;
-  }
-  // The keyboard shortcut skips the story, never the lock or readiness check.
-  async function complete() {
-    prepare(); stopped = true; voicePlayer.pause(); dropPlayer.pause();
-    const doc = await appReady;
-    for (const s of STEPS) {
-      build(doc, s.build);
-      for (const name of s.apps) {
-        const tile = tileOf(name); if (tile) tile.style.display = 'none';
-        if (!absorbed.includes(name)) absorbed.push(name);
-      }
+  async function toTrash(s) {
+    let spoken;
+    for (const [i, name] of s.apps.entries()) {
+      const held = await pick(name); if (!held || stopped) return;
+      if (!spoken) spoken = sound(s);
+      const target = centre(tileOf('trash').querySelector('img'));
+      await flight(held, target, spoken, spoken.progress(), (i + 1) / s.apps.length);
+      if (i === s.apps.length - 1) await spoken.done;
+      drop(name, held.tile, held.ghost, target, null, true);
     }
-    for (const ghost of screen.querySelectorAll('.mac-ghost')) ghost.remove();
-    arrow.hidden = true; say(''); step = STEPS.length;
   }
-  function setLive(on) {
-    live = on; screen.dataset.live = String(on);
-    if (on) screen.querySelector('.mac-offline').hidden = true;
-  }
+  function finish() { finished = true; arrow.hidden = true; screen.querySelector('.mac-build-shield')?.remove(); }
+  function present(on) { hosted = on; screen.dataset.hosted = String(on); if (on) screen.querySelector('.mac-offline').hidden = true; }
+  function setLive(on) { live = on; screen.dataset.live = String(on); if (on) screen.querySelector('.mac-offline').hidden = true; }
   function offline() { screen.querySelector('.mac-offline').hidden = false; }
-  // The build: the plain window a moment, then each step.
+  async function complete() {
+    prepare(); stopped = true; voiceCancel?.(); dropPlayer.pause(); onphone?.(null);
+    for (const s of STEPS) for (const name of s.apps) { const tile = tileOf(name); if (tile) consume(tile, name, s.trash); }
+    for (const ghost of screen.querySelectorAll('.mac-ghost')) ghost.remove();
+    step = STEPS.length; build('done'); finish();
+  }
   async function play() {
-    if (played) return;
-    played = true;
-    const doc = await appReady;
-    await delay(reduced.matches ? 300 : 1000);
-    await sound(INTRO.voice, INTRO.durationMs);
+    if (played || stopped) return; played = true;
+    if (reduced.matches) { await complete(); await onfinish?.(); return; }
+    const shield = document.createElement('div'); shield.className = 'mac-build-shield'; screen.append(shield);
+    await build('bare'); await sound(INTRO).done;
     for (const [i, s] of STEPS.entries()) {
-      if (stopped) return;
-      step = i;
-      const began = performance.now();
-      say(s.line);
-      const spoken = sound(s.voice, s.durationMs);
-      await delay(reduced.matches ? 0 : 500);
-      for (const name of s.apps) { if (stopped) return; await intoWindow(name); }
-      if (stopped) return;
-      // Back to the window, and the part arrives.
-      const win = frame.getBoundingClientRect();
-      await move(win.left + win.width * between(.42, .58), win.top + win.height * between(.38, .55), 750);
-      build(doc, s.build);
-      const hold = delay(s.holdMs ?? 2600);
-      await Promise.all([spoken, hold]);
-      await delay(Math.max(700, 3200 - (performance.now() - began)));
-      say('');
-      await delay(600);
+      if (stopped) return; step = i;
+      if (s.phone) {
+        if (reduced.matches) continue;
+        arrow.hidden = true;
+        const spoken = sound(s); await onphone?.(spoken); await spoken.done;
+        if (!stopped) arrow.hidden = false;
+      }
+      else if (s.trash) await toTrash(s);
+      else if (s.apps.length) await intoWindow(s);
+      else { await sound(s).done; if (!stopped) await build(s.build); }
     }
-    if (stopped) return;
-    step = STEPS.length;
-    await onfinish?.();
+    if (stopped) return; step = STEPS.length; await onfinish?.();
   }
   return { prime, prepare, reveal, play, complete, finish, present, live: setLive, offline,
-    state: () => ({ prepared, revealed, step, finished, hosted, live, built: [...built], absorbed: [...absorbed] }) };
+    state: () => ({ prepared, revealed, step, finished, hosted, live, built: [...built], absorbed: [...absorbed], trashed: [...trashed] }) };
 }

@@ -60,9 +60,15 @@ export function registerKeyBinding({ label, description, code, mod = false, ctrl
 }
 
 export function activeKeyBindings() {
-  return KEY_BINDINGS.filter(binding => {
+  // Electron owns these before DOM dispatch (desktop/electron/edit.mjs).
+  // Teach them here, without installing a second renderer key handler.
+  const editing = MOD === 'Super' ? [
+    ['C', 'copy'], ['V', 'paste'], ['X', 'cut'], ['A', 'select all'],
+    ['Z', 'undo'], ['Shift+Z', 'redo'],
+  ].map(([key, description]) => ({ label: `Super+${key}`, description })) : [];
+  return editing.concat(KEY_BINDINGS.filter(binding => {
     try { return binding.when(); } catch { return false; }
-  }).map(({ label, description }) => ({ label, description }));
+  }).map(({ label, description }) => ({ label, description })));
 }
 
 // Still imported by site.js, which another session is editing: both go

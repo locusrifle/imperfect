@@ -282,9 +282,8 @@ test('missing billing configuration leaves explanatory pages clean and mutation 
       const host = await (await f.call('/host.html')).text();
       assert.doesNotMatch(host, /action="\/os\/buy"/);
       assert.match(host, /Ask about imperfect OS/);
-      const rent = await (await f.call('/buy')).text();
-      assert.match(rent, /Monthly billing is not open yet/);
-      assert.match(rent, /data-billing="closed"/);
+      const offer = await (await f.call('/shop/offer')).json();
+      assert.equal(offer.rent.open, false);
       const buy = await f.post('/os/buy', null);
       assert.equal(buy.status, 303); assert.equal(buy.headers.get('location'), '/host.html');
       assert.equal(f.stripe.calls.length, 0);

@@ -52,6 +52,9 @@ test('a hosted computer\'s page at a laptop\'s size shows the agent\'s browser l
 
   // A plain web page, no desktop window or phone app round it.
   const page = await browser.newPage({ viewport: { width: 1536, height: 864 } });
+  // This regression exercises the scrolling layout's offscreen-column watch
+  // and full-width composer, not the focus layout now used by default.
+  await page.addInitScript(() => localStorage.setItem('imperfect.layout-choice', 'scrolling'));
   await page.goto(`http://127.0.0.1:${server.address().port}/?face=code`);
   await page.evaluate(async () => { const { mountGueyPi } = await import('/js/harness.js'); window.harness = mountGueyPi(); });
   await until(() => clients.length > 0, 'connecting');

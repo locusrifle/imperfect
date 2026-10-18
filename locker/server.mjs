@@ -1,7 +1,7 @@
 // The store for the imperfect repo: one loopback server behind the Cloudflare
-// tunnel. It keeps the legacy repo checkout and adds optional OS licences and
-// rented-computer billing. New offers stay closed until explicitly configured.
-// Repository buyers get one sentence to paste into the agent they already use.
+// tunnel. It keeps legacy members' keys, adds optional OS licences and rented
+// computers, and accepts support for the free public source code.
+// Offers stay closed until their billing is configured.
 //
 // Where it is sold is a setting, not a fact of the code: every hostname in
 // `hosts` answers with the store, the first is the one written into links and
@@ -30,6 +30,7 @@ import { saleWords } from './tell.mjs';
 import { createAccounts } from './accounts.mjs';
 import { createRentals } from './rentals.mjs';
 import { createSiteLocks } from './site-locks.mjs';
+import { createShop } from './shop.mjs';
 
 const PAID_EVENTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
 // A 100% promotion code completes the session with nothing to pay: a gift,
@@ -58,8 +59,7 @@ const TYPES = {
 const FRESH = 'public, max-age=300, stale-while-revalidate=86400';
 const LONG = 'public, max-age=86400, stale-while-revalidate=604800';
 const DOWNLOAD_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
-// The buy page plays the website's black hole, which compiles its own
-// WebAssembly.
+// Legacy store art compiles its own WebAssembly.
 const STORE_CSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'none'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'; base-uri 'none'";
 // The website (the launch) draws with WebGL and ends on a Mac whose window is
 // its own page (website/mac/app.html), and can open a live computer: the
@@ -222,6 +222,7 @@ export async function createLockerServer(options) {
     try { return hosts.includes(new URL(origin).hostname); } catch { return false; }
   }
   const clientKey = req => String(req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress ?? '');
+  const shop = createShop({ stripe, rentals, store, tell, secure, limiter, clientKey, readBody, json, html, escapeHtml, now });
 
   async function sendFile(res, root, urlPath, { cache = FRESH, extraHeaders = {} } = {}) {
     let pathname = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, '');
@@ -280,8 +281,7 @@ export async function createLockerServer(options) {
 
   // -- the store ------------------------------------------------------------
   async function storefront(req, res, path, search) {
-    // Renting and the code are on one page now; the old address goes there.
-    if (req.method === 'GET' && path === '/rent.html') { res.writeHead(301, { location: '/buy' }); return res.end(); }
+    if (await shop.handle(req, res, new URL(path + search, base))) return;
     if (req.method === 'GET' && path === '/host.html') {
       let body = await readFile(join(websiteDir, 'host.html'), 'utf8');
       if (osOpen()) {
@@ -320,36 +320,9 @@ export async function createLockerServer(options) {
       store.wait(email);
       return html(res, 200, await page('error.html', { status: '', message: `done. ${email} gets one email, the day the till opens.`, after: '', back: 'back to the computer' }));
     }
-    // One page with two options: renting (US$40/month, once billing is open; checkout is POST /account/rent)
-    // and the free code (sign-up gives the account its clone). The page takes no payment. The legacy $150 checkout
-    // (POST /buy below) is no longer linked from any page; whether it stays is Noah's call.
-    if (req.method === 'GET' && path === '/buy') {
-      let body = await readFile(join(websiteDir, 'buy.html'), 'utf8');
-      if (rentals.enabled()) body = body.replace('data-billing="closed"', 'data-billing="open"');
-      if (stripe && config.stripe?.price) body = body.replace('data-code="closed"', 'data-code="open"'); // the code: US$150 once, POST /buy below
-      return html(res, 200, body);
-    }
-    if (req.method === 'POST' && path === '/buy') {
-      if (!sameSite(req)) return fail(res, 403, 'that form came from somewhere else');
-      if (!limiter.allow(`buy:${clientKey(req)}`)) return fail(res, 429, 'slow down');
-      if (!stripe || !config.stripe?.price) return fail(res, 503, 'the till is not open yet', NOTIFY, 'back to the computer');
-      const form = await readForm(req);
-      const email = validEmail(form.email);
-      const session = await stripe.checkoutSession({
-        mode: 'payment',
-        line_items: [{ price: config.stripe.price, quantity: 1 }],
-        success_url: `${base}/thanks?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${base}/`,
-        ...(email ? { customer_email: email } : {}),
-        customer_creation: 'always',
-        allow_promotion_codes: true,
-        metadata: { product: 'code' },
-        // Locus sells as himself, not through Link as merchant of record
-        // (Stripe turns Managed Payments on by default).
-        managed_payments: { enabled: false },
-      }, { idempotencyKey: randomUUID() });
-      return redirect(res, session.url);
-    }
+    // POST /buy is retired: existing members never need to start another
+    // $150 checkout. Keep /thanks and the code webhook for their keys and
+    // payments already in flight; new source support grants no membership.
     if (req.method === 'GET' && path === '/thanks') {
       const sessionId = new URLSearchParams(search).get('session_id') ?? '';
       if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId) || !stripe) return fail(res, 400, 'no purchase to thank you for');
@@ -421,6 +394,7 @@ export async function createLockerServer(options) {
     try {
       const object = event.data?.object ?? {};
       await rentals.event(event);
+      if (PAID_EVENTS.has(event.type)) await shop.paidSale(object);
       if (PAID_EVENTS.has(event.type) && object.metadata?.product === 'os' && settled(object)) {
         await issueOS(object);
       }

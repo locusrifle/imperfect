@@ -1,6 +1,7 @@
 // Pulse's durable record. No I/O at import/construction, and no implicit seeds.
 // Rows are full-state events; a checkpoint replaces old events without losing
 // open incidents, any of their guard evidence, or unacknowledged completions.
+import { existsSync } from 'node:fs';
 import { open as openFile, readFile, mkdir, rename, unlink, stat, realpath } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -36,10 +37,16 @@ export async function atomicWrite(path, content) {
 
 // Kernel flock, not a stale-PID timeout lock. Closing stdin (including parent
 // SIGKILL) releases the child and lock. Never steal a slow live writer's lock.
-// A Mac has no flock(1); its lockf(1) takes the same lock (-k: the file stays).
-export const lockCommand = (path, program, platform = process.platform) => (platform === 'darwin'
-  ? ['/usr/bin/lockf', ['-k', '-t', '30', path, ...program]]
-  : ['flock', ['--exclusive', '--timeout', '30', path, ...program]]);
+// A Mac has no flock(1); its lockf(1) takes the same lock (-k: the file stays),
+// and before macOS 15, which has no lockf(1) either, perl's flock does. wait:
+// the seconds to keep trying (0: once).
+const PERL_LOCK = 'open(my $f, ">>", shift) or die "$!\\n"; my $until = time + shift; '
+  + 'until (flock($f, LOCK_EX | LOCK_NB)) { exit 75 if time >= $until; select(undef, undef, undef, 0.1) } '
+  + 'exit((system { $ARGV[0] } @ARGV) >> 8)';
+export const lockCommand = (path, program, platform = process.platform, { wait = 30, lockf = platform === 'darwin' && existsSync('/usr/bin/lockf') } = {}) => (
+  platform !== 'darwin' ? ['flock', ['--exclusive', '--timeout', String(wait), path, ...program]]
+    : lockf ? ['/usr/bin/lockf', ['-k', '-t', String(wait), path, ...program]]
+      : ['/usr/bin/perl', ['-MFcntl=:flock', '-e', PERL_LOCK, path, String(wait), ...program]]);
 async function locked(path, action) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const lockFile = await openFile(path, 'a', 0o600);

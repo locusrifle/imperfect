@@ -6,16 +6,15 @@
 //   LOCKER_PRODUCT=~/.imperfect/product   (imperfect.git + downloads/; imperfect-os.git + os-release.json + os-downloads/)
 // App binaries use tools/pin.mjs; the public OS repo/ISO use locker/tools/publish-os.mjs.
 // OS publication is optional: missing files disable installer download, not app access.
-//   PRICE=$150 USD               (no page shows it since 15 Oct 2026: the code is free on GitHub)
 //   DEMO_ORIGIN=https://noah.imperfect.computer   (the public Noah computer framed by the launch; see demo/)
 //   STRIPE_SECRET_KEY=sk_live_...
 //   STRIPE_WEBHOOK_SECRET=whsec_...
-//   STRIPE_PRICE=price_...      (legacy USD 150 checkout, unchanged)
 //   STRIPE_RENT_PRICE=price_... (US$40/month recurring; Noah, 15 Oct)
 //   STRIPE_OS_PRICE=price_...   (AUD 400 one-time lifetime)
 //   RENT_GRACE_DAYS=7          (unpaid time before stop intent)
 //   RENT_RETENTION_DAYS=30     (after stop; records a date, never deletes)
-// New offers need secret key + webhook secret + their own price to open.
+// Rental/OS offers need secret key + webhook secret + their own price to open.
+// Public-source support (/shop/code) uses custom USD amounts and needs only Stripe.
 // Stripe Customer Portal must permit cancellation and payment-method updates.
 //   MAIL_INBOX=locus@imperfect.computer    (the AgentMail inbox mail goes from; its
 //                                          key is credentials/agentmail-api-key)
@@ -97,7 +96,6 @@ export async function loadConfig(env = process.env) {
     secure: get('LOCKER_INSECURE') !== '1',
     hosts: get('STORE_HOSTS') || 'imperfect.computer,www.imperfect.computer',
     productDir: resolve(expand(get('LOCKER_PRODUCT') || join(prefix, 'product'))),
-    price: get('PRICE'),
     demoOrigin: get('DEMO_ORIGIN'),
     siteLocks: {
       file: resolve(expand(get('SITE_LOCKS_FILE') || join(credentials, 'site-locks.json'))),
@@ -105,7 +103,7 @@ export async function loadConfig(env = process.env) {
     },
     accounts,
     rentals: { graceDays: rentalDays('RENT_GRACE_DAYS', 7), retentionDays: rentalDays('RENT_RETENTION_DAYS', 30) },
-    stripe: { secretKey: get('STRIPE_SECRET_KEY'), webhookSecret: get('STRIPE_WEBHOOK_SECRET'), price: get('STRIPE_PRICE'), rentPrice: get('STRIPE_RENT_PRICE'), osPrice: get('STRIPE_OS_PRICE') },
+    stripe: { secretKey: get('STRIPE_SECRET_KEY'), webhookSecret: get('STRIPE_WEBHOOK_SECRET'), rentPrice: get('STRIPE_RENT_PRICE'), osPrice: get('STRIPE_OS_PRICE') },
     mail: { key: (await readFile(join(prefix, 'credentials', 'agentmail-api-key'), 'utf8').catch(() => '')).trim(), inbox: get('MAIL_INBOX') || undefined },
   };
 }

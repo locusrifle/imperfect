@@ -142,7 +142,7 @@ for (const theme of ['black', 'light-chalk']) test(`${theme}: Mod+V hangs what w
 	assert.deepEqual(f.errors, []);
 });
 
-test('in the desktop window Super+V; a picture picked goes on the clipboard and into the input bar as an image', async t => {
+test('in the desktop window Super+Shift+V; a picture picked goes on the clipboard and into the input bar as an image', async t => {
 	const f = await page(t, { desk: { altAlias: false } });
 	const p = f.page;
 	f.cliphist.put(PICTURE);
@@ -151,10 +151,10 @@ test('in the desktop window Super+V; a picture picked goes on the clipboard and 
 	await p.keyboard.press('Alt+KeyV');
 	await p.waitForTimeout(300);
 	assert.equal(await p.locator('.clip-panel').isVisible(), false, 'Alt is not Super in the desktop window under sway');
-	await p.keyboard.press('Meta+KeyV');
+	await p.keyboard.press('Meta+Shift+KeyV');
 	await p.locator('.clip-panel .clip-image').waitFor();
 	await p.keyboard.press('Enter');
-	await p.locator('.entry-pending-chip').waitFor({ state: 'attached' });
+	await p.locator('#entry-pending button[aria-label="remove clipboard-1.png"]').waitFor({ state: 'attached' });
 	assert.match(await p.locator('#entry-input').inputValue(), /image 1/);
 	const types = await p.evaluate(async () => (await navigator.clipboard.read()).flatMap(item => item.types));
 	assert.deepEqual(types, ['image/png']);

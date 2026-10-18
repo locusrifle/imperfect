@@ -82,6 +82,7 @@ function summary(tab, focused) {
     name: tabLabel(snap),
     prompt: firstUserLine(snap),
     model: sessionModel(snap),
+    provider: snap.model?.provider ?? null,
     busy: snap.busy,
     streaming: Boolean(snap.streaming),
     failed: snap.failed ?? null,

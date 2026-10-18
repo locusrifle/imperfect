@@ -327,8 +327,8 @@
 #entry-dialog.input-dialog .entry-dialog-actions button:disabled { opacity: 0.45; }
 #entry-dialog.input-dialog .entry-dialog-hint { margin: 10px 0 0; }
 @media (pointer: coarse) {
-  #entry-dialog.input-dialog .entry-dialog-option { min-height: 44px; }
-  #entry-dialog.input-dialog .entry-dialog-actions button { min-height: 44px; }
+  :where(html:not(.launch-framed)) #entry-dialog.input-dialog .entry-dialog-option { min-height: 44px; }
+  :where(html:not(.launch-framed)) #entry-dialog.input-dialog .entry-dialog-actions button { min-height: 44px; }
 }
 
 /* Both harnesses use this question sheet. Its footer owns the full band,

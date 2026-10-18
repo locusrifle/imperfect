@@ -1,121 +1,108 @@
-// A new session asks which computer only when there is a choice. A hosted
-// computer (the demo's: machine.json "hosted") lists only itself, so there it
-// never asks; an ordinary install with two computers still does.
+// The same client-only computer/harness page on every product. Selecting a
+// computer never starts a session: only an explicit harness activation does.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harnessFixture } from './fixtures/harness-page.mjs';
 
 const MESSAGES = [{ role: 'user', content: 'hello' }, { role: 'assistant', content: [{ type: 'text', text: 'hi' }] }];
-// Whether "pick a device" was ever on screen, from now on.
-const WATCH = () => {
-  window.asked = false;
-  new MutationObserver(() => { if (document.querySelector('.agent-choose-title')) window.asked = true; }).observe(document.body, { childList: true, subtree: true });
-};
-
-test('on a hosted computer a new session starts there, without asking which device', async () => {
-  const fixture = await harnessFixture({ messages: MESSAGES, machines: [{ id: 'vm', name: 'demo', self: true, online: true, reachable: true }] });
-  const { page } = fixture;
-  try {
-    const started = [], modelRequests = [];
-    fixture.answer = command => {
-      if (command.type === 'tab-new') started.push(command);
-      if (command.type === 'models') modelRequests.push(command);
-    };
-    await page.evaluate(WATCH);
-    await page.evaluate(() => harness.newTab());
-    await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
-    assert.equal(started.length, 1, 'the session started on the one computer');
-    assert.equal(await page.evaluate(() => window.asked), false, 'and "pick a device" never showed');
-    assert.equal(modelRequests.length, 0, 'the model chooser is not loaded automatically');
-    assert.equal(await page.locator('#entry-dialog.centre-box').count(), 0);
-    assert.deepEqual(fixture.errors, []);
-  } finally { await fixture.close(); }
-});
-
-test('with two computers a new session still asks which device', async () => {
-  const fixture = await harnessFixture({ messages: MESSAGES, machines: [
-    { id: 'a', name: 'desktop', self: true, online: true, reachable: true },
-    { id: 'b', name: 'laptop', online: true, reachable: true },
-  ] });
-  const { page } = fixture;
-  try {
-    const started = [], modelRequests = [];
-    fixture.answer = command => {
-      if (command.type === 'tab-new') started.push(command);
-      if (command.type === 'models') modelRequests.push(command);
-    };
-    await page.evaluate(() => harness.newTab());
-    await page.locator('.agent-choose-title').waitFor();
-    assert.equal(await page.locator('.agent-choose-title').textContent(), 'pick a device');
-    assert.deepEqual(await page.locator('.agent-choose-option').allTextContents(), ['desktop', 'laptop']);
-    assert.equal(started.length, 0, 'nothing starts until one is picked');
-    await page.locator('.agent-choose-option').first().click();
-    await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
-    assert.equal(started.length, 1);
-    assert.equal(started[0].model, undefined, 'the device chooses its saved default');
-    assert.equal(modelRequests.length, 0, 'picking the device is the only required choice');
-    assert.equal(await page.locator('#entry-dialog.centre-box').count(), 0);
-    assert.deepEqual(fixture.errors, []);
-  } finally { await fixture.close(); }
-});
-
-// Then which harness: Codex, Claude Code, Pi, in that order, starting on the
-// one a new tab would be unasked. One that cannot start here says so.
 const HARNESSES = [
   { agent: 'pi', ready: true, usual: false },
   { agent: 'claude', ready: true, usual: true },
   { agent: 'codex', ready: false, usual: false, blocked: 'Sign in to Codex in imperfect' },
 ];
+const local = { id: 'a', name: 'desktop', self: true, online: true, reachable: true };
+const chooser = page => page.locator('.agent-choose');
 
-test('with one computer a new session asks only which harness, and starts the one picked', async () => {
-  const fixture = await harnessFixture({ messages: MESSAGES, machines: [{ id: 'a', name: 'desktop', self: true, online: true, reachable: true }] });
-  const { page } = fixture;
+async function chooseFixture(machines) {
+  const f = await harnessFixture({ messages: MESSAGES, machines, snapshot: { harnesses: HARNESSES } });
+  f.started = [];
+  f.answer = (command, owner) => { if (command.type === 'tab-new') f.started.push({ ...command, owner }); };
+  return f;
+}
+
+test('hosted computer offers disabled Local and selected Cloud above its real harnesses', async () => {
+  const f = await chooseFixture([{ ...local, hosted: true }]); const { page } = f;
   try {
-    const started = [];
-    fixture.answer = command => { if (command.type === 'tab-new') started.push(command); };
-    fixture.push({ ...fixture.tab, harnesses: HARNESSES });
-    await page.waitForFunction(() => true);
-    await page.evaluate(WATCH);
     await page.evaluate(() => harness.newTab());
-    await page.locator('.agent-choose-title', { hasText: 'pick a harness' }).waitFor();
-    assert.equal(await page.evaluate(() => window.asked && !document.querySelector('.agent-choose-option[data-owner]')), true, 'no device question');
-    assert.deepEqual(await page.locator('.agent-choose-option').allTextContents(), ['Codex · sign in', 'Claude Code', 'Pi']);
-    assert.equal(await page.locator('.agent-choose-option[data-agent="codex"]').isDisabled(), false, 'it offers its sign-in');
-    assert.equal(await page.locator('.agent-choose-unready').count(), 1);
-    assert.equal(await page.locator('.agent-choose-option[data-agent="codex"]').getAttribute('title'), 'Sign in to Codex in imperfect');
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.agent), 'claude', 'enter takes the usual one');
-    await page.keyboard.press('ArrowRight');
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.agent), 'pi');
-    assert.equal(started.length, 0, 'nothing starts until one is picked');
-    await page.keyboard.press('Enter');
+    assert.deepEqual(await chooser(page).locator('.agent-choose-title').allTextContents(), ['pick a computer', 'pick a harness']);
+    assert.deepEqual(await chooser(page).locator('[data-computer]').allTextContents(), ['Local', 'Cloud']);
+    assert.equal(await page.locator('[data-computer="local"]').isDisabled(), true);
+    assert.equal(await page.locator('[data-computer="cloud"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(f.started.length, 0, 'opening the page creates nothing');
+    assert.equal(await page.locator('.agent-choose-hint').count(), 0);
+    await page.locator('[data-agent="pi"].agent-choose-option').click();
     await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
-    assert.deepEqual(started.map(command => command.agent), ['pi']);
-    assert.deepEqual(fixture.errors, []);
-  } finally { await fixture.close(); }
+    assert.deepEqual(f.started.map(command => command.agent), ['pi']);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
 });
 
-test('with two computers a new session asks the device, then the harness; esc goes back to the devices', async () => {
-  const fixture = await harnessFixture({ messages: MESSAGES, machines: [
-    { id: 'a', name: 'desktop', self: true, online: true, reachable: true },
-    { id: 'b', name: 'laptop', online: true, reachable: true },
-  ] });
-  const { page } = fixture;
+test('self is selected, Cloud is disabled when absent, and arrow/Enter keys still choose the usual harness', async () => {
+  const f = await chooseFixture([local]); const { page } = f;
   try {
-    const started = [];
-    fixture.answer = (command, owner) => { if (command.type === 'tab-new') started.push({ ...command, owner }); };
-    fixture.push({ ...fixture.tab, harnesses: HARNESSES });
     await page.evaluate(() => harness.newTab());
-    await page.locator('.agent-choose-title', { hasText: 'pick a device' }).waitFor();
-    await page.locator('.agent-choose-option[data-owner="b"]').click();
-    await page.locator('.agent-choose-title', { hasText: 'pick a harness' }).waitFor();
-    assert.match(await page.locator('.agent-choose-hint').textContent(), /esc for devices/);
-    await page.keyboard.press('Escape');
-    await page.locator('.agent-choose-title', { hasText: 'pick a device' }).waitFor();
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.owner), 'b', 'back on the device picked');
+    assert.equal(await page.locator('[data-computer="local"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('[data-computer="cloud"]').isDisabled(), true);
+    assert.deepEqual(await page.locator('.agent-choose-harness').allTextContents(), ['Codex · sign in', 'Claude Code', 'Pi']);
+    assert.equal(await page.locator('.agent-choose-harness[data-agent="codex"]').isDisabled(), false);
+    assert.equal(await page.locator('.agent-choose-harness[data-agent="codex"]').getAttribute('title'), 'Sign in to Codex in imperfect');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.agent), 'claude');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.agent), 'pi');
+    assert.equal(f.started.length, 0);
     await page.keyboard.press('Enter');
-    await page.locator('.agent-choose-option[data-agent="claude"]').click();
     await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
-    assert.deepEqual(started.map(command => [command.agent, command.owner]), [['claude', 'b']]);
-    assert.deepEqual(fixture.errors, []);
-  } finally { await fixture.close(); }
+    assert.deepEqual(f.started.map(command => command.agent), ['pi']);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('another reachable computer of the same kind stays selectable, offline computers are disabled', async () => {
+  const f = await chooseFixture([local,
+    { id: 'b', name: 'laptop', online: true, reachable: true },
+    { id: 'c', name: 'offline', online: false, reachable: false },
+  ]); const { page } = f;
+  try {
+    await page.evaluate(() => harness.newTab());
+    assert.equal(await page.locator('select[aria-label="Local computer"]').inputValue(), 'a', 'self, not home or the previously focused owner');
+    assert.equal(await page.locator('.agent-choose-machine option[value="c"]').isDisabled(), true);
+    await page.locator('.agent-choose-machine').selectOption('b');
+    await page.waitForFunction(() => document.querySelector('.agent-choose-harness[data-agent="claude"]') && document.querySelector('.agent-choose-machine')?.value === 'b');
+    assert.equal(f.started.length, 0, 'selecting the execution owner creates nothing');
+    await page.locator('.agent-choose-harness[data-agent="claude"]').click();
+    await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
+    assert.deepEqual(f.started.map(command => [command.agent, command.owner]), [['claude', 'b']]);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('Cloud selection changes the destination on the same page; Escape cancels without creating a tab', async () => {
+  const f = await chooseFixture([local, { id: 'vm', name: 'cloud', hosted: true, reachable: true }]); const { page } = f;
+  try {
+    await page.evaluate(() => harness.newTab());
+    await page.locator('[data-computer="cloud"]').click();
+    await page.waitForFunction(() => document.querySelector('[data-computer="cloud"]')?.getAttribute('aria-pressed') === 'true');
+    assert.equal(f.started.length, 0);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
+    assert.equal(f.started.length, 0);
+    await page.evaluate(() => harness.newTab());
+    await page.locator('[data-computer="cloud"]').click();
+    await page.locator('.agent-choose-harness[data-agent="claude"]').click();
+    await page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
+    assert.deepEqual(f.started.map(command => [command.agent, command.owner]), [['claude', 'vm']]);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a single harness still needs an explicit start; opening a bare chooser never auto-creates a tab', async () => {
+  const f = await harnessFixture({ messages: MESSAGES, machines: [local], snapshot: { harnesses: [{ agent: 'pi', ready: true }] } });
+  try {
+    await f.page.evaluate(() => harness.newTab());
+    await f.page.locator('.agent-choose-harness[data-agent="pi"]').waitFor();
+    assert.equal(f.commands.some(command => command.type === 'tab-new'), false);
+    await f.page.locator('.agent-choose-harness[data-agent="pi"]').click();
+    await f.page.waitForFunction(() => !document.querySelector('#entry-terminal.choosing'));
+    assert.equal(f.commands.filter(command => command.type === 'tab-new').length, 1);
+  } finally { await f.close(); }
 });

@@ -233,3 +233,70 @@ jobs:
           name: mac-${{ matrix.os }}-node-${{ matrix.node }}
           path: out
           if-no-files-found: warn
+
+  # The public command itself, from the internet, on a Mac that has never
+  # seen imperfect: the store's installer clones GitHub's main into
+  # ~/imperfect and runs ./install.sh. Whatever node the runner has is left as
+  # it is (install.sh decides; without node 22 it fetches mise, then node).
+  curl:
+    name: the public install command (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      OUT: ${{ github.workspace }}/out
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: An Apple Silicon Mac without imperfect
+        run: |
+          mkdir -p "$OUT"
+          { uname -m; sw_vers; command -v node && node --version || echo "no node"; } | tee "$OUT/runner.txt"
+          test "$(uname -m)" = arm64
+          test ! -e "$HOME/imperfect"
+
+      - name: curl -fsSL https://imperfect.computer/install | sh
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          curl -fsSL https://imperfect.computer/install | sh 2>&1 | tee "$OUT/install.log"
+          echo "installed in $(( $(date +%s) - start ))s" | tee -a "$OUT/install.log"
+          git -C "$HOME/imperfect" log --oneline -1 | tee "$OUT/commit.txt"
+          test -z "$(git -C "$HOME/imperfect" status --porcelain)"
+
+      - name: imperfect.app is signed, its machine answers, its window is open
+        run: |
+          app=/Applications/imperfect.app; [ -d "$app" ] || app="$HOME/Applications/imperfect.app"
+          codesign --verify --deep --strict "$app"
+          for i in $(seq 1 180); do curl -fsS --max-time 2 http://127.0.0.1:5067/health > "$OUT/health.json" 2>/dev/null && break; sleep 1; done
+          curl -fsS --max-time 2 http://127.0.0.1:5067/health
+          sleep 20
+          screencapture -x "$OUT/screen-1.png" || true
+          sleep 10
+          screencapture -x "$OUT/screen-2.png" || true
+
+      - name: The same command again only brings it up to date
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          curl -fsSL https://imperfect.computer/install | sh 2>&1 | tee "$OUT/install-2.log"
+          echo "second run in $(( $(date +%s) - start ))s" | tee -a "$OUT/install-2.log"
+          curl -fsS --max-time 5 http://127.0.0.1:5067/health
+
+      - name: What the Mac said
+        if: always()
+        run: |
+          mkdir -p "$OUT/imperfect"
+          cp -R "$HOME/.imperfect/logs" "$OUT/imperfect/" 2>/dev/null || true
+          for f in machine.json mac.json keeper.json; do cp "$HOME/.imperfect/$f" "$OUT/imperfect/" 2>/dev/null || true; done
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: curl-${{ matrix.os }}
+          path: out
+          if-no-files-found: warn

@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- imperfect OS's lock screen (lock.mjs). Everything relative resolves in ../../website/, whose opener it plays. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<base href="../../website/">
+<title>locked</title>
+<script src="../desktop/lock/profile.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="opener/style.css">
+<link rel="stylesheet" href="boot/sequence.css">
+<link rel="stylesheet" href="../desktop/lock/lock.css">
+</head>
+<body>
+<div class="stage" id="stage" aria-label="Locus and Vaita, apart">
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div class="still" id="still" hidden></div>
+  <div class="layer"><div class="glow" id="glow"></div></div>
+</div>
+<!-- Over the one canvas: the wordmark, then the single field, at the centre. The native keeper owns every key. -->
+<div class="app-sky" id="sky">
+  <canvas id="galaxyScene" aria-hidden="true"></canvas>
+  <canvas class="wordmark" id="wordmark" aria-hidden="true"></canvas>
+  <img class="goat" id="goat" alt="" aria-hidden="true" hidden>
+  <div class="box" id="box" hidden>
+    <div class="field" id="field"><span class="dots" id="dots"></span><span class="caret" id="caret"></span></div>
+  </div>
+</div>
+<svg class="rim" id="rim" aria-hidden="true" hidden>
+  <path id="rimPath"/>
+</svg>
+<script type="module" src="../desktop/lock/lock.mjs"></script>
+</body>
+</html>

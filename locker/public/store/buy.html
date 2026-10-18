@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" class="arriving">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>buy · imperfect</title>
+<meta name="description" content="imperfect: a one-time payment of {{price}} USD for lifetime access to the imperfect repo, every change after it, and the android app.">
+<meta name="theme-color" content="#2c2525" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f2edf2" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="/shared/locker.css?v={{v}}">
+<script type="module" src="/buy.js?v={{v}}"></script>
+<!-- everything the specks need, fetched with the page, so it all shows at once -->
+<link rel="modulepreload" href="/engine.js?v={{v}}">
+<link rel="modulepreload" href="/shared/blockmark.js?v={{v}}">
+<link rel="modulepreload" href="/assets/js/wte/ttfx.js">
+<link rel="modulepreload" href="/assets/js/paint.js">
+<link rel="modulepreload" href="/assets/js/sequence.js">
+<link rel="modulepreload" href="/assets/js/wordmark.js">
+<link rel="preload" href="/assets/js/wte/ttfx.wasm" as="fetch" type="application/wasm" crossorigin>
+<link rel="preload" href="/assets/fonts/omarchy-font.ttf" as="font" type="font/ttf" crossorigin>
+</head>
+<!-- The buy page, on one screen: why, what you get, then checkout (Stripe)
+     with the goat at the end of its line; or, while the till
+     is shut, an address to write to when it opens. -->
+<body class="oops buy">
+<main>
+  <h1 class="mark">imperfect</h1>
+
+  <section>
+    <h2 class="rule">why</h2>
+    <p>i want everyone to have their own operating system, one that shapes itself to fit the person using it. imperfect is where i am building mine, alongside the people that join. your contribution adds fuel to the collective fire.</p>
+  </section>
+
+  <section>
+    <h2 class="rule">what you get</h2>
+    <ul class="bullets">
+      <li>imperfect, a malleable agentic canvas powered by claude code or pi</li>
+      <li>the android app: every computer you own, in your pocket</li>
+      <li>lifetime membership</li>
+    </ul>
+  </section>
+
+  <div class="actions">
+{{{checkout}}}
+    <img class="buy-goat" src="/goat.png" alt="" width="80" height="80" aria-hidden="true">
+  </div>
+</main>
+</body>
+</html>

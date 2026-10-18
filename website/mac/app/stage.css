@@ -1,0 +1,207 @@
+/* The launch builds this window up in front of the visitor (../desktop.mjs): a plain window, then the harnesses,
+   then the files, then a browser, then the messages. Each step is a class on <html>: s-harness, s-files,
+   s-browser, s-messages. The later, cumulative classes replace the old pane with a real transcript:
+   s-memory → s-make → s-undo → s-everywhere. */
+:root { --rise: cubic-bezier(.2, .8, .2, 1); }
+html, body { overflow: hidden; }
+
+/* Plain: nothing in the window yet. */
+#session-rail, #canvas-strip { transition: opacity .7s ease; }
+html:not(.s-harness) :is(#session-rail, #canvas-strip) { opacity: 0; }
+
+/* The sidebar's parts come with their step. */
+html:not(.s-files) [data-part="files"], html:not(.s-browser) [data-part="sites"], html:not(.s-messages) [data-part="messages"] { display: none !important; }
+html.s-files [data-part="files"], html.s-browser [data-part="sites"], html.s-messages [data-part="messages"] { animation: part-in .6s var(--rise) both; }
+html.s-files [data-part="files"]:nth-child(n) { animation-delay: .25s; }
+html.s-messages [data-part="messages"]:nth-child(n) { animation-delay: .2s; }
+@keyframes part-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* The harnesses: the picker, one by one, and what each has left. */
+.agent-choose-title, .agent-choose-option, .agent-choose-hint { opacity: 0; }
+html.s-harness .agent-choose-title { animation: pop .7s .15s var(--rise) both; }
+html.s-harness .agent-choose-option:nth-child(1) { animation: pop .7s .35s var(--rise) both; }
+html.s-harness .agent-choose-option:nth-child(2) { animation: pop .7s .5s var(--rise) both; }
+html.s-harness .agent-choose-option:nth-child(3) { animation: pop .7s .65s var(--rise) both; }
+html.s-harness .agent-choose-hint { animation: pop .7s 1s var(--rise) both; }
+@keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.94); } to { opacity: 1; transform: none; } }
+.usage-row-fill { transform-origin: left center; }
+html.s-harness .usage-row-fill { animation: fill 1.4s .6s var(--rise) both; }
+@keyframes fill { from { transform: scaleX(0); } }
+
+/* Until the files come, the picker has the whole window; then it makes room. */
+html body.imperfect #entry-terminal .canvas-strip > .entry-screen { transition: width .9s var(--rise); }
+html:not(.s-files) body.imperfect #entry-terminal .canvas-strip > .entry-screen { width: 100% !important; }
+
+/* The files, then the browser, slide in from the right. */
+html body.imperfect #entry-terminal .canvas-strip > :is(.wm-panel-card, .wm-files, .wm-browser) {
+  transition: transform .95s var(--rise), opacity .5s ease;
+}
+html:not(.s-files) body.imperfect #entry-terminal .canvas-strip > :is(.wm-panel-card, .wm-files),
+html:not(.s-browser) body.imperfect #entry-terminal .canvas-strip > .wm-browser {
+  transform: translateX(calc(100% + 80px)); opacity: 0;
+}
+html.s-browser body.imperfect #entry-terminal .canvas-strip > .wm-files { transform: scale(.97); opacity: 0; transition-delay: .35s; }
+
+/* The browser's page is a picture of it. */
+.browser-shot { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+
+/* Later scenes use the same conversation nodes the live product renders (gui-transcript.js,
+   pages.js, focus.css). The new session is not visible during the original four steps. */
+.stage-session, .stage-conversation { display: none !important; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) :is(#session-rail, #canvas-strip) { opacity: 1; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal.focus-layout {
+  grid-template-columns: 248px minmax(0, 1fr) 0px;
+}
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal .canvas-strip > .entry-screen {
+  left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important;
+}
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal .canvas-strip > :is(.wm-files, .wm-browser, .wm-panel-card, .wm-panel-edge, .wm-extent) { display: none !important; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) #entry-output {
+  padding: 0 !important; white-space: normal;
+}
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) #entry-output > .agent-choose { display: none; }
+/* The exported picker wears .choosing. A conversation has its composer back,
+   without changing any of the original four scenes' classes or markup. */
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal.choosing > #entry-input-zone { display: grid; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal.choosing > .entry-status { display: block; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal.focus-layout.choosing::after { display: block; }
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) .stage-session { display: flex !important; }
+/* The active browser from the previous scene is no longer the pane in front. */
+html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #session-rail [data-page].active .session-rail-open { background: none; box-shadow: none; color: var(--label-2); }
+html.s-memory:not(.s-make):not(.s-undo):not(.s-everywhere) [data-stage-panel="memory"],
+html.s-make:not(.s-undo):not(.s-everywhere) [data-stage-panel="make"],
+html.s-undo:not(.s-everywhere) [data-stage-panel="undo"],
+html.s-everywhere:not(.s-live) [data-stage-panel="everywhere"] { display: block !important; animation: stage-arrive .65s var(--rise) both; }
+/* Offline only: a fresh picker, never a frozen old conversation. Online, the
+   final part is the actual inert live document, not a static imitation of it. */
+html.s-live #entry-output > .agent-choose { display: block; }
+html.s-live .stage-session { display: none !important; }
+html.s-live .agent-choose { height: 100%; display: flex !important; flex-direction: column; justify-content: center; }
+html.s-live body.imperfect #entry-terminal.choosing > :is(#entry-input-zone, .entry-status) { display: none; }
+@keyframes stage-arrive { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+html body.imperfect .focus-layout .stage-conversation.gui-transcript {
+  box-sizing: border-box; width: min(100%, 828px); margin: 0 auto;
+  padding: 56px 48px 116px !important; --turn-gap: 18px;
+}
+.stage-session-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 24px; font: 600 15px/1.4 var(--ui); color: var(--label); }
+.stage-session-title > span { font: 12px/1.4 var(--ui); color: var(--label-2); white-space: nowrap; }
+html body.imperfect .stage-conversation .gui-message { font-size: 16px; content-visibility: visible; }
+html body.imperfect .stage-conversation .gui-prompt { font-size: 16px; line-height: 1.5; }
+.stage-footnote { margin: 26px 0 0; padding-top: 16px; border-top: 1px solid var(--sep); font: 13px/1.5 var(--ui); color: var(--label-2); }
+/* Memory really is an agent search, not a separate invented memory app: a prompt,
+   the recall overview, its sources, and the answer. */
+html body.imperfect .stage-recall { margin: 22px 0 24px; }
+html body.imperfect .stage-recall summary { font-size: 13px; }
+html body.imperfect .stage-recall .stage-memory-hits { display: grid; gap: 0; padding: 8px 0 0; margin: 0; list-style: none; font-family: var(--ui); }
+.stage-memory-hits li { display: grid; grid-template-columns: 152px minmax(0, 1fr); gap: 3px 14px; padding: 12px 0; border-bottom: 1px solid var(--sep); }
+.stage-memory-hits li > span { grid-row: span 2; font-size: 12px; color: var(--label-2); }
+.stage-memory-hits strong { color: var(--label); font-size: 13px; font-weight: 500; }
+.stage-memory-hits q { quotes: none; color: var(--label-2); font-size: 12px; line-height: 1.5; }
+/* The existing launch film is packed picture | matte. Show only the left 4:3
+   picture in this ordinary pages.js shown-window; never show the matte as a second film. */
+html body.imperfect .stage-film { width: 488px; max-width: 100%; aspect-ratio: 4 / 3; margin: 0; border-radius: 0; }
+html body.imperfect .stage-film-picture > video { width: 200%; max-width: none; height: 100%; object-fit: fill; }
+.stage-media-caption { display: flex; align-items: center; gap: 7px; width: 488px; max-width: 100%; margin: 12px 0 18px; font: 12px/1.5 var(--ui); color: var(--label-2); }
+.stage-media-caption > span:last-child { margin-left: auto; }
+.stage-playing-dot { width: 5px; height: 5px; flex: none; background: var(--label); }
+/* A change is read in the conversation, then undone there. No invented OS
+   control panel: just the same prompt, code block and reply the app already has. */
+html body.imperfect .stage-diff { margin: 16px 0 0; border-radius: 0; }
+.stage-code-title { display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--sep); font: 12px/1.4 var(--ui); color: var(--label-2); }
+.stage-code-title > span { color: var(--label-3); }
+.stage-diff-remove { color: var(--theme-red); }
+.stage-diff-add { color: var(--theme-green); }
+.stage-theme-preview { display: grid; grid-template-columns: 142px 1fr; height: 142px; margin: 20px 0; overflow: hidden; border: 1px solid var(--sep-strong); background: #fff; color: #1d1d1f; font: 12px/1.5 var(--ui); }
+.stage-preview-rail { padding: 16px 12px; border-right: 1px solid rgb(127 127 127 / .25); background: rgb(127 127 127 / .08); }
+.stage-preview-rail strong { display: block; margin-top: 12px; font-weight: 500; }
+.stage-preview-chat { padding: 16px 20px; }
+.stage-preview-prompt { padding: 7px 10px; margin: 10px 0 8px; background: rgb(127 127 127 / .12); }
+.stage-theme-after { display: none; }
+.stage-undo-reply { opacity: 0; }
+html.s-undo .stage-theme-preview { animation: stage-theme-undo .6s 4s ease forwards; }
+html.s-undo .stage-theme-before { animation: stage-away .01s 4s forwards; }
+html.s-undo .stage-theme-after { display: inline; opacity: 0; animation: stage-arrive .01s 4s forwards; }
+html.s-undo .stage-undo-reply { animation: stage-arrive .6s 3.6s var(--rise) forwards; }
+@keyframes stage-theme-undo { to { background: var(--surface); color: var(--label); } }
+@keyframes stage-away { to { display: none; opacity: 0; } }
+/* The phone repeats the exact open session and latest exchange. Its strip,
+   transcript and composer are the product's phone.css layout, not an iOS chat. */
+html body.imperfect .focus-layout .stage-conversation[data-stage-panel="everywhere"] { width: 100%; padding: 56px 42px 116px !important; }
+.stage-everywhere-desktop { width: calc(100% - 374px); }
+.stage-kept-file { display: flex; align-items: center; gap: 12px; margin: 26px 0 20px; padding: 16px 14px; border: 1px solid var(--sep); font: 12px/1.5 var(--ui); }
+.stage-kept-file .sidebar-icon { flex: none; width: 24px; height: 28px; color: var(--label-2); }
+.stage-kept-file .sidebar-icon svg { width: 24px; height: 28px; }
+.stage-kept-file > div { min-width: 0; }
+.stage-kept-file strong { display: block; color: var(--label); font-weight: 500; }
+.stage-kept-file span { color: var(--label-2); }
+.stage-kept-file > span:last-child { margin-left: auto; }
+.stage-continuity-note { margin: 84px 0 0; color: var(--label-2); font: 20px/1.65 var(--ui); }
+.stage-continuity-note strong { color: var(--label); font-weight: 500; }
+.stage-phone { position: absolute; top: 52px; right: 42px; width: 318px; margin: 0; padding: 7px; border: 1px solid var(--sep-strong); background: #09090b; box-shadow: 0 20px 44px rgb(0 0 0 / .35); }
+.stage-phone-screen { position: relative; height: 590px; overflow: hidden; background: var(--surface); }
+.stage-phone-tabs { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px; border-bottom: 1px solid var(--sep); font: 13px/1 var(--ui); }
+.stage-phone-tabs > .session-rail-item { display: flex; align-items: center; flex: 1; height: 36px; min-width: 0; padding: 0 10px; background: var(--fill-2); }
+.stage-phone-tabs .session-rail-line { display: flex; align-items: center; gap: 8px; }
+.stage-phone-tabs .session-rail-agent { width: auto; font: 13px/1 var(--ui); }
+.stage-phone-tabs .session-rail-asked { display: block; font: 12px/1.2 var(--ui); }
+.stage-phone-menu { color: var(--label-2); font-size: 16px; }
+html body.imperfect .stage-phone .stage-phone-transcript { padding: 14px 16px 94px !important; }
+.stage-phone-owner { margin: 0 0 18px; color: var(--label-2); font: 11px/1.4 var(--ui); }
+html body.imperfect .stage-phone .gui-message { font-size: 15px; line-height: 1.5; }
+html body.imperfect .stage-phone .gui-prompt { font-size: 15px; line-height: 22px; padding: 10px 12px; }
+.stage-phone .stage-kept-file { padding: 12px 10px; margin-top: 22px; }
+.stage-phone .gui-turn-time { font-size: 11px; }
+.stage-phone-composer { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px 12px 12px; background: var(--surface); }
+.stage-phone-composer .entry-input-stack { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 0 12px; border: 1px solid var(--sep-strong); color: var(--label-2); font: 15px/1.5 var(--ui); }
+.stage-phone-composer .entry-status-line { display: flex; justify-content: space-between; margin-top: 12px; padding: 0 4px; font: 13px/1 var(--ui); color: var(--label-2); }
+.stage-phone-composer .entry-status-left { display: flex; align-items: center; gap: 7px; }
+.stage-phone-composer svg { width: 16px; height: 16px; }
+.stage-phone figcaption { margin: 14px 0 8px; color: var(--label-2); text-align: center; font: 12px/1.4 var(--ui); }
+/* The full Mac remains a scaled desktop on narrow visitors' screens. If the
+   parent grows the app frame, the scenes still fit the newly available space. */
+@media (max-width: 1100px) {
+  html body.imperfect .focus-layout .stage-conversation.gui-transcript { padding-left: 28px !important; padding-right: 28px !important; }
+  .stage-memory-hits li { grid-template-columns: 125px minmax(0, 1fr); }
+}
+/* The later conversations are readable at a phone's actual width, not a miniature desktop. */
+@media (max-width: 600px) {
+  html body.imperfect #entry-terminal.focus-layout,
+  html:is(.s-memory, .s-make, .s-undo, .s-everywhere) body.imperfect #entry-terminal.focus-layout { grid-template-columns: 0 minmax(0, 1fr) 0; }
+  html #session-rail { display: none !important; }
+  html body.imperfect #entry-terminal .canvas-strip > .entry-screen { width: 100% !important; }
+  html.s-files:not(.s-memory) body.imperfect #entry-terminal .canvas-strip > .entry-screen { width: 42% !important; }
+  html.s-files:not(.s-memory) .agent-choose { visibility: hidden; }
+  html body.imperfect #entry-terminal .canvas-strip > :is(.wm-panel-card, .wm-files, .wm-browser) { left: 0 !important; width: 100% !important; }
+  .agent-choose-row { flex-wrap: wrap; }
+  .agent-choose-option { min-width: 80px; }
+  .agent-choose-hint { font-size: 12px; }
+  /* Messages must arrive visibly too, not in a hidden desktop sidebar. */
+  html.s-messages:not(.s-memory) body.imperfect #entry-terminal.focus-layout > #session-rail { display: flex !important; position: absolute; inset: 0; z-index: 4; width: 100%; max-width: none; padding-top: 32px; }
+  html.s-messages:not(.s-memory) #session-rail :is(.session-rail-heading, .session-rail-foot, .sidebar-past, [data-part]:not([data-part="messages"])) { display: none !important; }
+  html.s-messages:not(.s-memory) #entry-terminal #session-rail .session-rail-sidebar { padding: 16px; }
+  html.s-messages:not(.s-memory) #entry-terminal #session-rail .session-rail-open { min-height: 48px; font-size: 16px; }
+  html.s-messages:not(.s-memory) #canvas-strip { visibility: hidden; }
+  html body.imperfect .focus-layout .stage-conversation.gui-transcript,
+  html body.imperfect .focus-layout .stage-conversation[data-stage-panel="everywhere"] { width: 100%; padding: 40px 18px 96px !important; }
+  .stage-session-title { margin-bottom: 18px; font-size: 13px; }
+  .stage-session-title > span { font-size: 10px; }
+  .stage-memory-hits li { grid-template-columns: 1fr; padding: 8px 0; gap: 2px; }
+  .stage-memory-hits li > span { grid-row: auto; font-size: 10px; }
+  html body.imperfect .stage-conversation .gui-message, html body.imperfect .stage-conversation .gui-prompt { font-size: 14px; }
+  [data-stage-panel="memory"] > :is(.gui-turn-time, .stage-footnote), [data-stage-panel="undo"] .gui-turn-time { display: none; }
+  .stage-footnote { margin-top: 16px; font-size: 11px; }
+  .stage-theme-preview { grid-template-columns: 100px 1fr; }
+  .stage-preview-chat { padding: 12px; }
+  .stage-everywhere-desktop { display: none; }
+  .stage-phone { position: relative; top: auto; right: auto; width: 294px; max-width: 100%; margin: 0 auto; }
+  .stage-phone-screen { height: 480px; }
+  .stage-phone figcaption { font-size: 11px; margin: 8px 0 4px; }
+}
+/* Reduced motion: each part is simply there. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0s !important; transition-duration: 1ms !important; transition-delay: 0s !important; }
+  .stage-theme-preview { background: var(--surface); color: var(--label); }
+  .stage-theme-before { display: none !important; }
+  .stage-theme-after { display: inline; opacity: 1; }
+  .stage-undo-reply { opacity: 1; }
+}

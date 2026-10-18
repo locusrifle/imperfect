@@ -1,0 +1,64 @@
+:root {
+  --theme-bg: #121214;
+  --theme-goat-filter: brightness(1);
+  --theme-cloud-ink: #656566;
+  --theme-bar-bg: #121214;
+  --theme-raised: #121214;
+  --theme-band: #222225;
+  --theme-ink: #f2f2f7;
+  --theme-bright: #ffffff;
+  --theme-muted: #98989d;
+  --theme-accent: #0a84ff;
+  --theme-rule: #2c2c2f;
+  --theme-dim: #7c7c82;
+  --theme-red: #ff6961;
+  --theme-yellow: #ffd426;
+  --theme-green: #30d158;
+  --theme-orange: #ffb340;
+  --theme-blue: #5ac8fa;
+  --theme-cyan: #70d7ff;
+  --theme-magenta: #ff7ab2;
+  --theme-secondary: #cacace;
+  --garden: var(--theme-bg);
+  --paper: var(--theme-bg);
+  --panel: var(--theme-raised);
+  --panel-raised: var(--theme-raised);
+  --panel-band: var(--theme-band);
+  --panel-text: var(--theme-ink);
+  --panel-bright: var(--theme-bright);
+  --panel-rule: var(--theme-rule);
+  --ink: var(--theme-ink);
+  --muted: var(--theme-muted);
+  --orange: var(--theme-accent);
+  --pi-bg: var(--theme-raised);
+  --pi-bg-raised: var(--theme-raised);
+  --pi-text: var(--theme-ink);
+  --pi-text-bright: var(--theme-bright);
+  --pi-muted: var(--theme-muted);
+  --pi-dim: var(--theme-dim);
+  --pi-accent: var(--theme-accent);
+  --pi-cursor: var(--theme-bright);
+  --pi-user: var(--theme-band);
+  --pi-rule: var(--theme-accent);
+  --pi-error: var(--theme-red);
+  --pi-tool-error: var(--theme-red);
+  --pi-working: var(--theme-accent);
+  --tui-pageBg: var(--theme-raised);
+  --tui-cardBg: var(--theme-raised);
+  --tui-userMessageBg: var(--theme-band);
+  --tui-text: var(--theme-ink);
+  --tui-userMessageText: var(--theme-bright);
+  --tui-muted: var(--theme-muted);
+  --tui-dim: var(--theme-dim);
+  --tui-accent: var(--theme-accent);
+  --tui-selectedBg: var(--theme-band);
+  --tui-border: var(--theme-rule);
+  --tui-warning: var(--theme-yellow);
+  --tui-success: var(--theme-green);
+  --tui-permission: var(--theme-red);
+  --tui-secondary: var(--theme-secondary);
+  /* Two rules, two jobs: a hairline between rows, and the findable line the
+     composer sits behind. */
+  --tui-rule-strong: var(--theme-muted);
+}
+html, body { background: var(--theme-bg); color: var(--theme-ink); color-scheme: dark; }

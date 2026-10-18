@@ -1,0 +1,24 @@
+node_modules/
+.env
+.env.*
+*.bak*
+*.log
+.test-artifacts/
+
+# Native and generated build outputs.
+phone/.gradle/
+phone/.kotlin/
+phone/build/
+phone/app/build/
+phone/local.properties
+*.apk
+
+# Written and removed by the static website check.
+website/.art-check.html
+
+# GPL-v2 game source and a non-redistributable shareware WAD may exist on a
+# machine, but this AGPL repository must never distribute either.
+apps/code/native/public/doom/
+
+# Throwaway checks for the live demo.
+demo/.scratch/

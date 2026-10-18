@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<title>imperfect</title>
+<meta name="description" content="A computer that changes when you do.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="imperfect">
+<meta property="og:title" content="imperfect">
+<meta property="og:description" content="A computer that changes when you do.">
+<meta property="og:image" content="https://imperfect.computer/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="sequence.css?v=buy-1">
+<link rel="stylesheet" href="mac/desktop.css?v=seamless-1">
+<script type="module" src="launch.mjs?v=seamless-1"></script>
+</head>
+<body data-phase="loading">
+<nav aria-label="Skip"><a class="keyboard-skip" id="skip" href="#computer">Skip to the computer</a></nav>
+<main aria-labelledby="launchHeading">
+  <h1 id="launchHeading" class="sr-only">imperfect: launch film and live computer</h1>
+  <section id="macScreen" class="screen mac" data-visible="false" aria-label="A Mac, with your own app being built on it" aria-hidden="true" inert hidden>
+    <div class="mac-wall"></div>
+    <header class="mac-bar">
+      <span class="mac-apple"><svg viewBox="0 0 24 24"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span>
+      <nav class="mac-menus" aria-label="Mac menu"><span aria-hidden="true">File</span><span aria-hidden="true">Edit</span><span aria-hidden="true">View</span><span aria-hidden="true">Window</span><span aria-hidden="true">Help</span><a href="/buy">Shop</a></nav>
+      <span class="mac-status">
+        <span><svg viewBox="0 0 16 16"><circle cx="3" cy="3" r="1.7" opacity=".45"/><circle cx="8" cy="3" r="1.7" opacity=".45"/><circle cx="13" cy="3" r="1.7" opacity=".45"/><circle cx="3" cy="8" r="1.7"/><circle cx="8" cy="8" r="1.7"/><circle cx="13" cy="8" r="1.7"/><circle cx="3" cy="13" r="1.7" opacity=".45"/><circle cx="8" cy="13" r="1.7"/><circle cx="13" cy="13" r="1.7" opacity=".45"/></svg></span>
+        <span><svg viewBox="0 0 28 13"><rect x=".6" y=".6" width="23.4" height="11.8" rx="3.4" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.1"/><path d="M25.4 4.2c.9.3 1.4 1.1 1.4 2.3s-.5 2-1.4 2.3z" opacity=".5"/><rect x="2.3" y="2.3" width="20" height="8.4" rx="1.9"/><path d="M14.3 1.2 8.6 7.6h3.6l-1.4 4.3 5.7-6.4h-3.6z" fill="#3b2364" stroke="#3b2364" stroke-width=".9" stroke-linejoin="round"/><path d="M14.3 1.2 8.6 7.6h3.6l-1.4 4.3 5.7-6.4h-3.6z" stroke="none"/></svg></span>
+        <span><svg viewBox="0 0 18 14"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"><path d="M1.6 4.9a10.4 10.4 0 0 1 14.8 0"/><path d="M4.4 7.9a6.4 6.4 0 0 1 9.2 0"/></g><path d="M6.9 10.6a3 3 0 0 1 4.2 0L9 12.9z"/></svg></span>
+        <span><svg viewBox="0 0 16 16"><circle cx="6.6" cy="6.6" r="4.9" fill="none" stroke="#fff" stroke-width="1.7"/><path d="M10.3 10.3l4.2 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span><svg viewBox="0 0 18 15"><rect x=".8" y=".8" width="16.4" height="5.6" rx="2.8" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="4" cy="3.6" r="1.8"/><rect x=".8" y="8.6" width="16.4" height="5.6" rx="2.8" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="14" cy="11.4" r="1.8"/></svg></span>
+        <span class="mac-siri"><svg viewBox="0 0 16 16"><defs><radialGradient id="macSiri" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="#ffffff"/><stop offset=".28" stop-color="#ff63c6"/><stop offset=".62" stop-color="#7a5cff"/><stop offset="1" stop-color="#22b8ff"/></radialGradient></defs><circle cx="8" cy="8" r="7" fill="url(#macSiri)"/></svg></span>
+        <time class="mac-clock"></time>
+      </span>
+    </header>
+    <div class="mac-window">
+      <iframe title="Your own app" data-src="mac/app.html?v=seamless-1" tabindex="-1" aria-hidden="true"></iframe>
+      <section id="demoScreen" class="screen demo" data-visible="false" aria-label="The real imperfect computer" aria-hidden="true" inert>
+        <iframe id="computer" title="imperfect · live computer" referrerpolicy="strict-origin-when-cross-origin" allow="clipboard-read; clipboard-write; microphone; fullscreen"></iframe>
+      </section>
+      <p class="mac-offline" role="status" hidden>Your computer is not available yet. The preview is still here. <button id="macRetry" type="button">Try again</button></p>
+      <span class="mac-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+    <div class="mac-dock" aria-hidden="true">
+      <div class="mac-tile" data-app="finder"><img src="mac/icons/finder.webp" alt=""><i class="mac-run"></i></div>
+      <div class="mac-tile" data-app="safari"><img src="mac/icons/safari.webp" alt=""></div>
+      <div class="mac-tile" data-app="settings"><img src="mac/icons/settings.webp" alt=""></div>
+      <div class="mac-tile" data-app="claude"><img src="mac/icons/claude.webp" alt=""></div>
+      <div class="mac-tile" data-app="chatgpt"><img src="mac/icons/chatgpt.webp" alt=""></div>
+      <div class="mac-tile" data-app="kinso"><img src="mac/icons/kinso.webp" alt=""></div>
+      <div class="mac-tile" data-app="notes"><img src="mac/icons/notes.webp" alt=""></div>
+      <div class="mac-tile" data-app="imovie"><img src="mac/icons/imovie.webp" alt=""></div>
+      <div class="mac-tile" data-app="time-machine"><img src="mac/icons/time-machine.webp" alt=""></div>
+      <div class="mac-tile" data-app="own"><img src="mac/icons/app.webp" alt=""><i class="mac-run"></i></div>
+      <div class="mac-gap"></div>
+      <div class="mac-tile" data-app="tailscale"><img src="mac/icons/tailscale.webp" alt=""></div>
+      <div class="mac-tile" data-app="appstore"><img src="mac/icons/appstore.webp" alt=""></div>
+      <div class="mac-gap"></div>
+      <div class="mac-tile" data-app="trash"><img src="mac/icons/trash-full.webp" alt=""></div>
+    </div>
+    <p class="mac-line" aria-live="polite"></p>
+    <img class="mac-cursor" src="mac/cursor.png" alt="" aria-hidden="true">
+  </section>
+  <div class="curtain" id="curtain" hidden></div>
+  <section id="introScreen" class="screen" aria-label="Noah and Locus, the Creation of Adam">
+    <div class="stage" id="stage">
+      <canvas id="scene" aria-hidden="true"></canvas>
+      <div class="still" id="still" hidden></div>
+      <div class="layer"><div class="glow" id="glow"></div></div>
+    </div>
+    <div class="app-sky" id="sky">
+      <canvas id="galaxyScene" aria-hidden="true"></canvas>
+      <canvas class="wordmark" id="wordmark" aria-hidden="true"></canvas>
+      <img class="goat" id="goat" alt="" aria-hidden="true" decoding="async" hidden>
+    </div>
+    <svg class="rim" id="rim" aria-hidden="true" hidden>
+      <path id="rimPath"/>
+    </svg>
+  </section>
+  <section id="filmScreen" class="screen film" data-visible="false" aria-label="imperfect launch film" aria-hidden="true" inert>
+    <div class="film-area" id="filmArea"></div>
+    <div class="film-box"><video id="film" preload="auto" playsinline aria-label="imperfect launch film"></video></div>
+    <canvas id="filmCanvas" aria-hidden="true"></canvas>
+  </section>
+</main>
+<div class="lock" id="lockScreen" hidden>
+  <form id="lock" aria-label="Locked" autocomplete="off" novalidate hidden>
+    <div class="field" id="field" data-typed="false">
+      <input id="password" name="password" type="password" aria-label="Password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="128">
+      <span class="dots" id="dots" aria-hidden="true"></span><span class="caret" aria-hidden="true"></span>
+      <button id="unlock" type="submit" aria-label="Unlock"><svg class="padlock" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="shackle" d="M8 11V7.6a4 4 0 0 1 8 0V11"/><path d="M5.5 11h13v9.5h-13z"/></svg></button>
+    </div>
+  </form>
+</div>
+<p class="hint" id="hint" aria-hidden="true"><svg viewBox="0 0 12 7" aria-hidden="true" focusable="false"><path d="M1 6L6 1L11 6"/></svg>scroll</p>
+<p class="sr-only" id="announce" aria-live="polite"></p>
+<div class="prompt" id="prompt" hidden>
+  <p id="status" role="status" aria-live="polite"></p>
+  <button id="action" type="button" hidden></button>
+  <button id="retry" type="button" hidden>Retry</button>
+  <a id="fallback" href="#computer" target="_blank" rel="noopener" hidden>Open computer<span class="sr-only"> (opens in a new tab)</span></a>
+</div>
+<noscript><div class="no-script">JavaScript is needed for the launch sequence.</div></noscript>
+</body>
+</html>

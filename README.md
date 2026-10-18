@@ -38,6 +38,6 @@ What changed, and when: `git log`.
 
 ## Licence
 
-Copyright © 2026 Locus. **[GNU AGPL v3](LICENSE)** (`AGPL-3.0-only`). Files
+Copyright © 2026 Locus. **[MIT](LICENSE)**. Files
 by other authors keep their own terms, listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

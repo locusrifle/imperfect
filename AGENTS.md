@@ -4,7 +4,7 @@ One computer, many forms, never finished. This repository is everything:
 imperfect (an agent window for Linux) with Workbench inside it, the Android app
 that is a window into all of a person's computers, and the store at
 imperfect.computer that rents computers running it. The repository is free and
-open source (AGPL-3.0) at github.com/locusrifle/imperfect: anyone can clone it,
+open source (MIT) at github.com/locusrifle/imperfect: anyone can clone it,
 and no key is needed. Everyone who has a copy, Locus included, runs it from
 their own checkout at `~/imperfect`.
 

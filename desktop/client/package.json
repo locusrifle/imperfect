@@ -6,7 +6,7 @@
   "description": "Your imperfect computer, on this desktop.",
   "author": "Imperfect",
   "homepage": "https://imperfect.computer",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "main.mjs",

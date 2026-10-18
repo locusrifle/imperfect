@@ -80,7 +80,7 @@ export function plist(version, icon = 'imperfect.icns') {
     CFBundleExecutable: 'imperfect', CFBundleName: 'imperfect', CFBundleDisplayName: 'imperfect',
     CFBundleIdentifier: BUNDLE_ID, CFBundleShortVersionString: version, CFBundleVersion: version,
     CFBundleIconFile: icon, LSApplicationCategoryType: 'public.app-category.developer-tools',
-    NSHumanReadableCopyright: 'Copyright © 2026 Locus. GNU AGPL v3.',
+    NSHumanReadableCopyright: 'Copyright © 2026 Locus. MIT licence.',
     NSMicrophoneUsageDescription: 'imperfect hears a prompt you speak into the mic in its input bar.',
     NSCameraUsageDescription: 'A website in imperfect\'s browser asked for the camera.',
     NSDesktopFolderUsageDescription: why, NSDocumentsFolderUsageDescription: why, NSDownloadsFolderUsageDescription: why,

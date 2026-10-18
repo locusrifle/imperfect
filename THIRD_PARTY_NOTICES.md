@@ -1,7 +1,7 @@
 # Third-party notices
 
-This project is AGPL-3.0-only. Files by other authors keep their own terms;
-the AGPL on the surrounding project does not relicense them. Fonts and
+This project is MIT-licensed. Files by other authors keep their own terms;
+the MIT licence on the surrounding project does not relicense them. Fonts and
 scripts are vendored because the pages' content-security policy allows only
 their own origin.
 
@@ -102,7 +102,7 @@ public [Notes](https://support.apple.com/guide/notes/welcome/4.11/mac/15.0),
 [Time Machine](https://support.apple.com/guide/mac-help/back-up-files-mh35860/15.0/mac/15.0)
 user guides (retrieved 18 October 2026). They identify those apps in the Mac
 sequence, alongside the existing Mac Dock imagery. Apple retains its rights;
-these brand assets are not AGPL-licensed, and no Apple endorsement is implied.
+these brand assets are not MIT-licensed, and no Apple endorsement is implied.
 
 ## Not in this repository
 

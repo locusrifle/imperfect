@@ -96,26 +96,162 @@ busy() {
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).busy?"1":"0")}catch{process.stdout.write("0")}})'
 }
 
-# The mic in imperfect's dock turns speech into a prompt on this computer, with
-# NVIDIA's Parakeet (as sherpa-onnx packages it, 480 MB, fetched once).
-# Nothing leaves the machine. Without it, or without ffmpeg, the mic says so.
-VOICE_MODEL_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2
-VOICE_MODEL_SHA256=157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad
-voice_model() {
-  local dir="$PREFIX/models/parakeet-tdt-0.6b-v2-int8"
-  [[ -f "$dir/tokens.txt" ]] && return 0
-  command -v ffmpeg >/dev/null || say "note: ffmpeg is not installed, so the mic cannot hear recordings until it is"
-  say "fetching the voice model for the mic (480 MB, once)"
-  local tmp; tmp="$(mktemp -d)"
-  if curl -fL --progress-bar -o "$tmp/model.tar.bz2" "$VOICE_MODEL_URL" \
-    && [[ "$(sha256sum "$tmp/model.tar.bz2" | cut -d' ' -f1)" == "$VOICE_MODEL_SHA256" ]] \
-    && tar xjf "$tmp/model.tar.bz2" -C "$tmp"; then
-    mkdir -p "$PREFIX/models"
-    rm -rf "$dir" && mv "$tmp/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8" "$dir"
-  else
-    say "note: the voice model could not be fetched; ./install.sh again tries once more"
+# The mic's ears: Whisper large-v3-turbo on the GPU of the computer the others
+# follow (the authority in machine.json, the PC). It stays loaded, in a
+# service of its own on loopback, so restarting imperfect never unloads it;
+# the other computers send it their recordings (system/transcribe.mjs).
+# whisper.cpp is built here with Vulkan at a pinned commit. Anything the build
+# lacks that needs no root (CMake, the Vulkan headers) is fetched, pinned,
+# beside it in ~/.imperfect/whisper. Nothing leaves the person's computers.
+WHISPER="imperfect-whisper.service"
+WHISPER_COMMIT=4979e04f5dcaccb36057e059bbaed8a2f5288315 # v1.8.2
+WHISPER_MODEL_URL=https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+WHISPER_MODEL_SHA256=1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69
+WHISPER_MODEL_BYTES=1624555275
+CMAKE_VERSION=3.31.6
+declare -A CMAKE_SHA256=(
+  [x86_64]=5a1133ff103c71eb5120e2cc3de922733e7d8a26a98ae716397e8676adb367bf
+  [aarch64]=b4cc788d63112b2749b40627e719eb5d3b8ed8f00c36d77189f4019cfe64bc9e
+)
+VULKAN_HEADERS_COMMIT=952f776f6573aafbb62ea717d871cd1d6816c387 # v1.4.309
+
+# A repository at one commit, fetched shallow; the commit is its checksum.
+git_at() { # <dir> <url> <commit>
+  local dir="$1" url="$2" commit="$3"
+  [[ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$commit" ]] && return 0
+  mkdir -p "$dir"
+  git -C "$dir" init --quiet \
+    && git -C "$dir" fetch --quiet --depth 1 "$url" "$commit" \
+    && git -C "$dir" -c advice.detachedHead=false checkout --quiet --force FETCH_HEAD
+}
+
+# The Vulkan loader the build links to, where the distribution put it.
+vulkan_library() {
+  ls /usr/lib/libvulkan.so /usr/lib64/libvulkan.so /usr/lib/*-linux-gnu/libvulkan.so \
+    /usr/lib/libvulkan.so.1 /usr/lib64/libvulkan.so.1 /usr/lib/*-linux-gnu/libvulkan.so.1 2>/dev/null | head -1 || true
+}
+
+# Whether the Vulkan headers are where a build finds them by itself.
+vulkan_headers() { [[ -f /usr/include/vulkan/vulkan.h || -f /usr/local/include/vulkan/vulkan.h ]]; }
+
+# whisper-server, built once for the pinned commit; WHISPER_SERVER is its path.
+whisper_build() {
+  local dir="$PREFIX/whisper" missing=() tool
+  for tool in git c++ make glslc; do command -v "$tool" >/dev/null 2>&1 || missing+=("$tool"); done
+  local lib; lib="$(vulkan_library)"
+  [[ -n "$lib" ]] || missing+=(libvulkan)
+  if (( ${#missing[@]} )); then
+    note "the mic's ears need ${missing[*]} to build (a C++ compiler and make, shaderc for glslc, the Vulkan loader); install them with your package manager, then ./install.sh again"
+    return 1
   fi
-  rm -rf "$tmp"
+  local src="$dir/whisper.cpp" build="$dir/whisper.cpp/build"
+  WHISPER_SERVER="$build/bin/whisper-server"
+  [[ -x "$WHISPER_SERVER" && "$(cat "$build/.imperfect-built" 2>/dev/null)" == "$WHISPER_COMMIT" ]] && return 0
+
+  local cmake=cmake
+  if ! command -v cmake >/dev/null 2>&1; then
+    local arch; arch="$(uname -m)"
+    [[ -n "${CMAKE_SHA256[$arch]:-}" ]] || { note "no CMake for $arch is pinned here; install cmake, then ./install.sh again"; return 1; }
+    cmake="$dir/cmake-$CMAKE_VERSION-linux-$arch/bin/cmake"
+    if [[ ! -x "$cmake" ]]; then
+      say "fetching CMake $CMAKE_VERSION for the build (Kitware's release, once)"
+      mkdir -p "$dir"
+      local tarball="$dir/cmake.tar.gz"
+      if ! { curl -fL --progress-bar -o "$tarball" "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-linux-$arch.tar.gz" \
+          && printf '%s  %s\n' "${CMAKE_SHA256[$arch]}" "$tarball" | sha256sum -c --quiet - \
+          && tar xzf "$tarball" -C "$dir"; }; then
+        rm -f "$tarball"; note "could not fetch CMake, or it did not match its checksum"; return 1
+      fi
+      rm -f "$tarball"
+    fi
+  fi
+  local headers=()
+  if ! vulkan_headers; then
+    say "fetching the Vulkan headers for the build (Khronos's v1.4.309, once)"
+    git_at "$dir/vulkan-headers" https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COMMIT" \
+      || { note "could not fetch the Vulkan headers"; return 1; }
+    headers=("-DVulkan_INCLUDE_DIR=$dir/vulkan-headers/include")
+  fi
+
+  say "building whisper.cpp with Vulkan for the mic (a few minutes, once)"
+  git_at "$src" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_COMMIT" || { note "could not fetch whisper.cpp"; return 1; }
+  rm -rf "$build"
+  if ! { "$cmake" -S "$src" -B "$build" -DGGML_VULKAN=ON -DWHISPER_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release \
+        "${headers[@]}" "-DVulkan_LIBRARY=$lib" >/dev/null \
+      && "$cmake" --build "$build" --config Release --target whisper-server -j "$(nproc)" >/dev/null \
+      && [[ -x "$WHISPER_SERVER" ]]; }; then
+    note "whisper.cpp did not build; the output above says why"; return 1
+  fi
+  printf '%s\n' "$WHISPER_COMMIT" > "$build/.imperfect-built"
+}
+
+# The model, fetched once and checked; WHISPER_MODEL is its path.
+whisper_model() {
+  WHISPER_MODEL="$PREFIX/models/ggml-large-v3-turbo.bin"
+  [[ "$(stat -c %s "$WHISPER_MODEL" 2>/dev/null)" == "$WHISPER_MODEL_BYTES" ]] && return 0
+  say "fetching Whisper large-v3-turbo for the mic (1.6 GB, once)"
+  mkdir -p "$PREFIX/models"
+  if curl -fL --progress-bar -o "$WHISPER_MODEL.part" "$WHISPER_MODEL_URL" \
+    && printf '%s  %s\n' "$WHISPER_MODEL_SHA256" "$WHISPER_MODEL.part" | sha256sum -c --quiet -; then
+    mv "$WHISPER_MODEL.part" "$WHISPER_MODEL"
+  else
+    rm -f "$WHISPER_MODEL.part"
+    note "Whisper's model could not be fetched, or did not match its checksum; ./install.sh again tries once more"
+    return 1
+  fi
+}
+
+# The unit that keeps Whisper loaded, on loopback at the port in machine.json.
+whisper_unit() { # <port>
+  cat <<EOF
+[Unit]
+Description=imperfect's ears: Whisper large-v3-turbo on the GPU (loopback :$1)
+
+[Service]
+Type=simple
+ExecStart=$WHISPER_SERVER --host 127.0.0.1 --port $1 -m $WHISPER_MODEL -t 4 -bs 5 -bo 5 -l en -nc
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+EOF
+}
+
+# home: 0 when this is the computer the others follow (memory.mjs home), 1
+# when it follows another, anything else when that cannot be told now.
+whisper_ears() { # <node> <home>
+  local node_bin="$1" home="$2"
+  # The mic's model before Whisper is not used any more.
+  rm -rf "$PREFIX/models/parakeet-tdt-0.6b-v2-int8"
+  if [[ "$home" != 0 ]]; then
+    if [[ "$home" == 1 && -f "$UNIT_DIR/$WHISPER" ]]; then
+      systemctl --user disable --now "$WHISPER" >/dev/null 2>&1 || true
+      rm -f "$UNIT_DIR/$WHISPER"
+      systemctl --user daemon-reload
+    fi
+    return 0
+  fi
+  # The person's own words for Whisper (names, places), one per line: theirs to fill.
+  [[ -e "$PREFIX/vocabulary.txt" ]] || (umask 077; : > "$PREFIX/vocabulary.txt")
+  command -v ffmpeg >/dev/null 2>&1 || say "note: ffmpeg is not installed, so the mic cannot hear recordings until it is"
+  whisper_build || return 0
+  whisper_model || return 0
+  local port unit
+  port="$("$node_bin" --input-type=module -e "import { readConfig } from '$ROOT/system/machine.mjs'; process.stdout.write(String((await readConfig(process.argv[1])).whisper.port))" "$PREFIX")"
+  unit="$(whisper_unit "$port")"
+  mkdir -p "$UNIT_DIR"
+  # Restarted only when it changed: loading takes a moment, and a recording
+  # may be being heard.
+  if [[ "$(cat "$UNIT_DIR/$WHISPER" 2>/dev/null)" != "$unit" ]]; then
+    printf '%s\n' "$unit" > "$UNIT_DIR/$WHISPER"
+    systemctl --user daemon-reload
+    systemctl --user enable "$WHISPER" >/dev/null 2>&1 || true
+    systemctl --user restart "$WHISPER"
+    say "the mic's ears are running: Whisper on the GPU, loopback :$port ($WHISPER)"
+  else
+    systemctl --user enable --now "$WHISPER" >/dev/null 2>&1 || true
+  fi
 }
 
 # Memory: every session's log from every computer, kept in one place, and the
@@ -126,9 +262,8 @@ voice_model() {
 # said a few minutes ago, and a model writes up each stretch of a session
 # that has ended; every two hours the pass then brings Pi and Claude Code up
 # to date. A computer that follows another keeps none.
-memory_timer() {
-  local node_bin="$1" home=0
-  IMPERFECT_PREFIX="$PREFIX" "$node_bin" "$ROOT/system/memory.mjs" home || home=$?
+memory_timer() { # <node> <home>
+  local node_bin="$1" home="$2"
   if [[ "$home" == 0 ]]; then
     cat > "$UNIT_DIR/$MEMORY.service" <<EOF
 [Unit]
@@ -180,7 +315,6 @@ setup() {
   # Personal state lives in ~/.imperfect, outside this checkout.
   mkdir -p "$PREFIX" "$BIN_DIR"
   chmod 700 "$PREFIX"
-  voice_model
   if [[ -n "$KEY" ]]; then (umask 077; printf '%s\n' "$KEY" > "$PREFIX/license"); fi
   if [[ ! -f "$PREFIX/machine.json" ]]; then
     (umask 077; printf '{\n  "port": %s,\n  "origins": [],\n  "authentication": true\n}\n' "$PORT" > "$PREFIX/machine.json")
@@ -269,7 +403,11 @@ EOF
     systemctl --user start "$UNIT"
   fi
 
-  memory_timer "$node_bin"
+  # Whether this is the computer the others follow, for memory and the mic.
+  local home=0
+  IMPERFECT_PREFIX="$PREFIX" "$node_bin" "$ROOT/system/memory.mjs" home || home=$?
+  memory_timer "$node_bin" "$home"
+  whisper_ears "$node_bin" "$home"
 
   # Tailscale joins this computer to the buyer's others and to the phone.
   if ! command -v tailscale >/dev/null 2>&1; then
@@ -333,8 +471,8 @@ teardown() {
     die "an agent is working in imperfect; let it finish, then run this again"
   fi
   systemctl --user disable --now "$UNIT" >/dev/null 2>&1 || true
-  systemctl --user disable --now "$MEMORY.timer" >/dev/null 2>&1 || true
-  rm -f "$UNIT_DIR/$UNIT" "$UNIT_DIR/$MEMORY.timer" "$UNIT_DIR/$MEMORY.service"; systemctl --user daemon-reload || true
+  systemctl --user disable --now "$MEMORY.timer" "$WHISPER" >/dev/null 2>&1 || true
+  rm -f "$UNIT_DIR/$UNIT" "$UNIT_DIR/$MEMORY.timer" "$UNIT_DIR/$MEMORY.service" "$UNIT_DIR/$WHISPER"; systemctl --user daemon-reload || true
   if command -v tailscale >/dev/null 2>&1 && tailscale serve status --json 2>/dev/null | grep -q "\"http://127.0.0.1:$((PORT + 1))\""; then
     tailscale serve --https=8443 off >/dev/null 2>&1 || note "run 'tailscale serve --https=8443 off' to stop publishing what agents show"
   fi

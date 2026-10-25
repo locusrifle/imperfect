@@ -128,6 +128,7 @@ for (const phone of [false, true]) {
   test(`${phone ? 'phone' : 'desktop'} keeps a stalled voice attachment in the original composer`, async t => {
     const { f, page, go } = await setup(t);
     let finish;
+    await page.route('**/upload', route => route.fulfill({ json: { path: '/fixture/note.wav', size: 5, reference: { name: 'note', sessionId: 'thread-a' } } }));
     await page.route('**/transcribe', route => new Promise(resolve => { finish = async () => { await route.fulfill({ json: { text: 'A voice attachment' } }); resolve(); }; }));
     await page.evaluate(() => { void harness.attachFiles([new File(['audio'], 'note.wav', { type: 'audio/wav' })]); });
     await page.waitForTimeout(100);
@@ -138,7 +139,10 @@ for (const phone of [false, true]) {
     await page.waitForTimeout(80);
     assert.equal(await page.locator('#entry-input').inputValue(), 'B draft');
     await go('tab-a');
-    assert.match(await page.locator('#entry-input').inputValue(), /A voice attachment/);
+    // It stands in its own draft as "audio 1", its words held for sending.
+    assert.match(await page.locator('#entry-input').inputValue(), /audio 1/);
+    assert.equal(await page.evaluate(() => harness.composerStatus().attachments), 1);
+    await page.waitForFunction(() => document.querySelector('#entry-pending')?.textContent.includes('(audio 1)') && !document.querySelector('#entry-pending').textContent.includes('hearing'));
     assert.deepEqual(f.errors, []);
   });
 }

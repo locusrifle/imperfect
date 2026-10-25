@@ -375,7 +375,8 @@ export async function createGueyServer(options = {}) {
     const { file } = await openUpload(prompt.audio, target);
     return file.createReadStream();
   }
-  const transcribe = createTranscriber({ openAudio });
+  // Heard by Whisper on the authority: here, or sent there (system/transcribe.mjs).
+  const transcribe = createTranscriber({ openAudio, whisper: options.whisper, authority: authorityPeer });
   const dictation = createDictation({ runtime, hear: transcribe.hear, openAudio });
   // The keys live in one box, on the authority: x_post here posts through it
   // when this computer has none, and the box answers /x/ for the others.
@@ -632,7 +633,7 @@ export async function createGueyServer(options = {}) {
     if (await clipboard.handle(req, res, path)) return;
     // Byte uploads and hearing have their own body deadlines; decoding/hearing
     // can outlast a short POST, as can media generation and X processing.
-    if (req.method === 'POST' && !/^\/(?:peer\/[^/]+\/)?(?:upload|dictate|transcribe)$/.test(path) && path !== '/x/media' && path !== '/images/make') {
+    if (req.method === 'POST' && !/^\/(?:peer\/[^/]+\/)?(?:upload|dictate|transcribe)$/.test(path) && path !== '/hear' && path !== '/x/media' && path !== '/images/make') {
       const timer = setTimeout(() => {
         if (!res.headersSent) res.writeHead(408).end('timeout');
         req.destroy();
@@ -642,11 +643,8 @@ export async function createGueyServer(options = {}) {
     }
 
 
-    if (path === '/transcribe' && req.method === 'POST') {
-      if (!req.headers.origin) { res.writeHead(403).end('exact origin required'); return; }
-      await transcribe(req, res, path);
-      return;
-    }
+    // /hear: another computer's recording, heard here on the authority.
+    if (await transcribe(req, res, path)) return;
     if (await dictation(req, res, path)) return;
 
     if (path === '/upload' && req.method === 'POST') {

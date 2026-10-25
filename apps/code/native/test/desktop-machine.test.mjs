@@ -11,7 +11,7 @@ test('native pairing is opt-in and carries only an absolute token file path in m
 });
 
 test('public account pairing configuration is canonical HTTPS, complete, secret-free and opt-in', () => {
-  assert.deepEqual(normalizeConfig(), { port: 5067, origins: [], authority: { id: '', name: '' }, hosted: false });
+  assert.deepEqual(normalizeConfig(), { port: 5067, origins: [], authority: { id: '', name: '' }, hosted: false, whisper: { port: 5069 } });
   const account = { store: 'https://imperfect.computer', computerId: 'computer-uuid', owner: 'owner-uuid' };
   assert.deepEqual(normalizeConfig({ deviceHandsAccount: account }).deviceHandsAccount, account);
   for (const value of [null, {}, [], { ...account, owner: '' }, { ...account, computerId: 'bad id' }, { ...account, signer: 'never' }, ...['http://127.0.0.1:1', 'https://imperfect.computer/', 'https://u:p@imperfect.computer', 'https://imperfect.computer?x', 'https://imperfect.computer/#x'].map(store => ({ ...account, store }))]) {

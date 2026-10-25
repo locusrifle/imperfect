@@ -460,7 +460,7 @@ body.imperfect #entry-terminal.focus-layout .session-actions :is(.entry-voice, .
 }
 body.imperfect #entry-terminal.focus-layout .session-actions :is(.entry-voice, .entry-attach):hover { background: var(--fill-2); color: var(--label); }
 body.imperfect #entry-terminal.focus-layout .session-actions .entry-voice:has(.entry-voice-clock:not(:empty)) { width: auto; padding: 0 10px; }
-body.imperfect #entry-terminal.focus-layout .session-actions .entry-voice:is([data-state="recording"], [data-state="kept"]) { color: var(--danger); outline: 0; }
+body.imperfect #entry-terminal.focus-layout .session-actions .entry-voice[data-state="recording"] { color: var(--danger); outline: 0; }
 body.imperfect #entry-terminal.focus-layout .session-actions svg { width: 16px; height: 16px; }
 /* The + is the sidebar's own, New session's and New view's: two thin
    strokes, not the filled cross. */

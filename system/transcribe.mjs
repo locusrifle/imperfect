@@ -1,45 +1,66 @@
-// Voice into words, on this machine: POST /transcribe with a reference to an audio or
-// video file (a recording from the mic in imperfect's dock, or an old one
-// attached), and the answer is its text, for the composer. The mic's own
-// recordings are heard by the same hear() and sent on as the prompt
-// (system/dictate.mjs). The decoder reads a copy from a
-// temporary decoder file and deleted; the uploaded original is never deleted.
+// Voice into words. POST /transcribe with a reference to an uploaded audio
+// or video file (a recording from the mic in imperfect's dock, or one
+// attached), and the answer is its text. The decoder reads a copy from a
+// temporary file, deleted after; the uploaded original is never deleted.
 //
-// ffmpeg turns whatever arrives into 16 kHz mono samples, and Parakeet
-// (sherpa-onnx, the model in ~/.imperfect/models) turns those into words, in a
-// child process: loaded it holds about a gigabyte, so it starts with the
-// first request and exits a minute after the last.
+// Only the computer the others follow (the authority in machine.json, the PC
+// with the GPU) hears. There ffmpeg turns whatever arrives into 16 kHz mono
+// WAV, and Whisper large-v3-turbo turns that into words. Whisper is always
+// loaded, in a service of its own on loopback (imperfect-whisper.service,
+// from install.sh). The person's own words (names, places), one per line in
+// ~/.imperfect/vocabulary.txt, are read on each request and sent as
+// Whisper's prompt. Any other computer sends the audio to the authority's
+// POST /hear and gets the words back, the way generate_image reaches the key
+// box; /hear is guarded the same way (exact origin, and only this computer's
+// tailnet name or loopback, which server.mjs checks).
+//
+// Long audio goes to Whisper whole. whisper-server walks it in its own
+// half-minute windows, moving on where its timestamps say a segment ended,
+// and that whole-clip run is what was measured on the PC (108 s in 4.2 s).
+// Cutting it here as well would split the names prompt across pieces for
+// nothing.
 
-import { fork, spawn } from 'node:child_process';
-import { accessSync, constants, createWriteStream, existsSync, statSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { accessSync, constants, createWriteStream, statSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import { readAttachmentJson } from '../apps/code/native/uploads.mjs';
+import { resolvePrefix } from './machine.mjs';
 
-export const MODEL_DIR = join(homedir(), '.imperfect', 'models', 'parakeet-tdt-0.6b-v2-int8');
 const RATE = 16000;
+const MAX_BYTES = 1024 * 1024 * 1024;
+// Whisper takes at most half its 448-token text context as the prompt and
+// drops the start of anything longer. At about three characters a token for
+// names, 600 characters stays under it.
+export const MOST_PROMPT_CHARS = 600;
+// An hour's meeting takes Whisper a few minutes on the PC.
+const HEARING_MS = 15 * 60_000;
 
-// Long audio is heard in pieces of about half a minute, each ending at the
-// quietest moment of its last three seconds, so no word is cut in two.
-export function pieces(samples, { rate = RATE, length = 30, search = 3 } = {}) {
-  const out = [];
-  const size = length * rate, window = search * rate, step = rate / 50;
-  let start = 0;
-  while (samples.length - start > size) {
-    let cut = start + size, quietest = Infinity;
-    for (let at = start + size - window; at < start + size; at += step) {
-      let energy = 0;
-      for (let i = at; i < at + step; i++) energy += samples[i] * samples[i];
-      if (energy < quietest) { quietest = energy; cut = at + step / 2; }
-    }
-    out.push(samples.subarray(start, cut));
-    start = cut;
+export const vocabularyFile = (prefix = resolvePrefix()) => join(prefix, 'vocabulary.txt');
+const fault = (status, message) => Object.assign(new Error(message), { status });
+
+// The prompt from vocabulary.txt: its lines, in order, as many as fit.
+export function namesPrompt(text) {
+  let prompt = '';
+  for (const line of String(text ?? '').split('\n').map(word => word.trim()).filter(Boolean)) {
+    const next = prompt ? `${prompt}, ${line}` : line;
+    if (next.length > MOST_PROMPT_CHARS) break;
+    prompt = next;
   }
-  if (samples.length - start > rate / 10) out.push(samples.subarray(start));
-  return out;
+  return prompt;
+}
+
+// 16-bit mono samples as a WAV file.
+export function wav(pcm, rate = RATE) {
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0); head.writeUInt32LE(36 + pcm.length, 4); head.write('WAVE', 8);
+  head.write('fmt ', 12); head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20); head.writeUInt16LE(1, 22);
+  head.writeUInt32LE(rate, 24); head.writeUInt32LE(rate * 2, 28); head.writeUInt16LE(2, 32); head.writeUInt16LE(16, 34);
+  head.write('data', 36); head.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([head, pcm]);
 }
 
 const unavailable = message => Object.assign(new Error(message), { status: 503 });
@@ -66,10 +87,11 @@ export function resolveFFmpeg({
   throw unavailable('ffmpeg is not available to the voice service on this computer; install ffmpeg or set IMPERFECT_FFMPEG to its executable absolute path');
 }
 
+// Any audio or video file as 16 kHz mono 16-bit samples.
 export function decodeAudio(file, { spawnImpl = spawn, ...lookup } = {}) {
   const command = resolveFFmpeg(lookup);
   return new Promise((resolve, reject) => {
-    const ff = spawnImpl(command, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const ff = spawnImpl(command, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(RATE), '-f', 's16le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
     const chunks = [];
     let error = '';
     ff.stdout.on('data', chunk => chunks.push(chunk));
@@ -79,63 +101,87 @@ export function decodeAudio(file, { spawnImpl = spawn, ...lookup } = {}) {
       : error));
     ff.on('close', code => {
       if (code !== 0) return reject(new Error(`could not read that audio: ${error.trim().split('\n').at(-1) || `ffmpeg ${code}`}`));
-      const bytes = Buffer.concat(chunks);
-      resolve(new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.length / 4)));
+      resolve(Buffer.concat(chunks));
     });
   });
 }
 
-// forkImpl and decodeAudio: the worker and ffmpeg, which a test can stand in for.
-export function createTranscriber({ modelDir = MODEL_DIR, idleMs = 60_000, forkImpl = fork, decodeAudio: decode = decodeAudio, openAudio } = {}) {
-  let worker = null, idle = null, next = 0;
-  const waiting = new Map();
-  // The worker holding the model, started when first wanted.
-  function transcriber() {
-    clearTimeout(idle);
-    if (worker) return worker;
-    worker = forkImpl(new URL('./transcribe-worker.mjs', import.meta.url).pathname, [modelDir], { serialization: 'advanced', stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
-    worker.on('message', ({ id, text, error }) => {
-      const job = waiting.get(id);
-      if (!job) return;
-      waiting.delete(id);
-      if (error) job.reject(new Error(error)); else job.resolve(text);
-      if (!waiting.size) idle = setTimeout(() => { worker?.kill(); }, idleMs);
-    });
-    worker.on('exit', () => {
-      worker = null;
-      for (const job of waiting.values()) job.reject(new Error('the transcriber stopped'));
-      waiting.clear();
-    });
-    return worker;
-  }
-  const words = samples => new Promise((resolve, reject) => {
-    const id = ++next;
-    waiting.set(id, { resolve, reject });
-    transcriber().send({ id, pieces: pieces(samples).map(piece => piece.slice()) });
-  });
-
-  // The words in some audio (a stream or bytes): { text, seconds }. Without
-  // the model it fails with status 503, as the route answers.
-  async function hear(audio) {
-    if (!existsSync(join(modelDir, 'tokens.txt'))) throw Object.assign(new Error('the voice model is not on this computer; run ./install.sh again to fetch it'), { status: 503 });
+// whisper: the port of this computer's Whisper server (machine.json).
+// authority(): the computer the others follow, as authorityPeer in server.mjs
+// gives it: null when this is it, { url: '' } while it cannot be reached.
+// openAudio(prompt): the upload a /transcribe request names, as a stream.
+// decodeAudio and fetch: ffmpeg and the network, which a test can stand in for.
+export function createTranscriber({ whisper = 5069, authority = async () => null, vocabulary = vocabularyFile(), decodeAudio: decode = decodeAudio, fetch: send = fetch, openAudio } = {}) {
+  // Heard here, by the Whisper server on loopback.
+  async function here(audio) {
     const dir = await mkdtemp(join(tmpdir(), 'imperfect-voice-'));
+    let pcm;
     try {
       const file = join(dir, 'audio');
       await pipeline(audio, createWriteStream(file));
-      const samples = await decode(file);
-      const text = samples.length ? await words(samples) : '';
-      return { text, seconds: Math.round(samples.length / RATE) };
+      pcm = await decode(file);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+    const seconds = Math.round(pcm.length / 2 / RATE);
+    if (!pcm.length) return { text: '', seconds };
+    const form = new FormData();
+    form.append('file', new Blob([wav(pcm)], { type: 'audio/wav' }), 'audio.wav');
+    form.append('response_format', 'json');
+    form.append('temperature', '0.0');
+    const prompt = namesPrompt(await readFile(vocabulary, 'utf8').catch(() => ''));
+    if (prompt) form.append('prompt', prompt);
+    let res;
+    try {
+      res = await send(`http://127.0.0.1:${whisper}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(HEARING_MS) });
+    } catch (error) {
+      throw unavailable(`Whisper is not running on this computer (${error.cause?.code || error.message}); run ./install.sh, or see systemctl --user status imperfect-whisper.service`);
+    }
+    const answer = await res.json().catch(() => ({}));
+    if (!res.ok || answer.error) throw fault(502, `Whisper could not hear it: ${answer.error || res.status}`);
+    return { text: String(answer.text ?? '').replace(/\s+/g, ' ').trim(), seconds };
   }
 
-  // Answers POST /transcribe; false for anything else.
+  // Heard on the authority: the audio goes there, and the words come back.
+  async function there({ url, name }, audio) {
+    const who = `${name || 'the PC'}, which hears the mic,`;
+    if (!url) throw fault(502, `${who} cannot be reached right now`);
+    let res;
+    try {
+      res = await send(`${url}/hear`, { method: 'POST', headers: { origin: new URL(url).origin, 'content-type': 'application/octet-stream' }, body: audio, duplex: 'half', redirect: 'error', signal: AbortSignal.timeout(HEARING_MS) });
+    } catch (error) {
+      throw fault(502, `${who} cannot be reached right now (${error.cause?.code || error.message})`);
+    }
+    const answer = await res.json().catch(() => ({}));
+    if (!res.ok) throw fault(res.status === 422 || res.status === 413 ? res.status : 502, `${name || 'the PC'}: ${answer.error || res.status}`);
+    return { text: String(answer.text ?? ''), seconds: Number(answer.seconds) || 0 };
+  }
+
+  // The words in some audio (a stream or bytes): { text, seconds }.
+  async function hear(audio) {
+    const elsewhere = await authority();
+    return elsewhere ? there(elsewhere, audio) : here(audio);
+  }
+
+  // Answers POST /transcribe (an upload, from a window) and POST /hear (the
+  // audio itself, from another computer); false for anything else.
   async function handle(req, res, path) {
-    if (path !== '/transcribe' || req.method !== 'POST') return false;
-    const json = (status, value) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); };
+    if (!['/transcribe', '/hear'].includes(path) || req.method !== 'POST') return false;
+    const json = (status, value) => {
+      if (res.headersSent || res.destroyed) return;
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(value));
+    };
     if (!req.headers.origin) { json(403, { error: 'exact origin required' }); return true; }
     try {
+      if (path === '/hear') {
+        // Never passed on again: only the authority hears.
+        const elsewhere = await authority();
+        if (elsewhere) throw fault(409, `this computer does not hear recordings; ${elsewhere.name || 'the PC'} does`);
+        if (Number(req.headers['content-length'] || 0) > MAX_BYTES) throw fault(413, 'that recording is larger than 1 GB');
+        json(200, await here(req));
+        return true;
+      }
       const audio = await openAudio(await readAttachmentJson(req));
       try { json(200, await hear(audio)); } finally { audio.destroy(); }
     } catch (error) {

@@ -49,6 +49,7 @@ const app = await createGueyServer({
   machines,
   authority: config.authority,
   hosted: config.hosted,
+  whisper: config.whisper.port,
   // Runs under the existing handoff's final idle fence, not a second updater.
   restart: async () => {
     const take = activation;

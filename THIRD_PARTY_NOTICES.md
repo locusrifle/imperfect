@@ -111,10 +111,12 @@ OpenAI retain their respective artwork rights; no endorsement is implied.
 
 ## Not in this repository
 
-The dependencies in `package.json` (Pi, the Claude Agent SDK, sherpa-onnx,
-`ws`, Electron, Playwright) are installed by `npm ci`, and the mic's voice
-model (NVIDIA Parakeet TDT 0.6B v2, CC-BY-4.0, as packaged by sherpa-onnx)
-is fetched by `install.sh`. None of them is committed here; each keeps its
+The dependencies in `package.json` (Pi, the Claude Agent SDK, `ws`,
+Electron, Playwright) are installed by `npm ci`. The mic's ears are fetched
+and built by `install.sh` on the computer the others follow: whisper.cpp
+(MIT); CMake (BSD-3-Clause) and the Khronos Vulkan-Headers (Apache-2.0)
+when that computer lacks them; and OpenAI's Whisper large-v3-turbo (MIT),
+as ggml-large-v3-turbo.bin. None of them is committed here; each keeps its
 own licence.
 
 ## MIT licence

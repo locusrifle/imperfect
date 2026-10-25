@@ -1,9 +1,10 @@
 // This computer's own settings (~/.imperfect/machine.json) and where its
-// data lives. The settings are four: the port imperfect listens on, any
-// origins it answers besides its own, the authority it follows, and whether
-// it is hosted: a computer someone uses only through the web (the demo's),
-// which stands alone, never looking for others, so a new session simply
-// starts on it.
+// data lives. The settings are five: the port imperfect listens on, any
+// origins it answers besides its own, the authority it follows, whether it
+// is hosted (a computer someone uses only through the web, the demo's, which
+// stands alone, never looking for others, so a new session simply starts on
+// it), and the port of the Whisper server that hears the mic on the
+// authority (system/transcribe.mjs).
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
@@ -31,8 +32,8 @@ function parseOrigins(value) {
   });
 }
 
-function parsePort(value) {
-  if (value == null || value === '') return 5067;
+function parsePort(value, fallback = 5067) {
+  if (value == null || value === '') return fallback;
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid port: ${value}`);
   return port;
@@ -74,6 +75,7 @@ export function normalizeDeviceHandsAccount(value, { testInsecure = false } = {}
 export function normalizeConfig(raw = {}) {
   if (raw.deviceHandsTokenFile !== undefined && (typeof raw.deviceHandsTokenFile !== 'string' || !isAbsolute(raw.deviceHandsTokenFile) || raw.deviceHandsTokenFile.includes('\0'))) throw new Error('deviceHandsTokenFile must be an absolute private file path');
   return { port: parsePort(raw.port), origins: parseOrigins(raw.origins), authority: cleanAuthority(raw.authority), hosted: raw.hosted === true,
+    whisper: { port: parsePort(raw.whisper?.port, 5069) },
     ...(raw.deviceHandsTokenFile === undefined ? {} : { deviceHandsTokenFile: raw.deviceHandsTokenFile }),
     ...(raw.deviceHandsAccount === undefined ? {} : { deviceHandsAccount: normalizeDeviceHandsAccount(raw.deviceHandsAccount) }) };
 }

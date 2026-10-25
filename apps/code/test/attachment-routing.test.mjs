@@ -49,17 +49,19 @@ test('remote uploads land only at the captured execution owner; reference routes
 
   // These JSON endpoints must open only uploads belonging to their own
   // captured session; arbitrary paths and altered identities never reach ASR.
-  for (const action of ['dictate', 'transcribe']) {
-    const use = (prefix, audio, origin = local.base) => fetch(`${local.base}${prefix}/${action}`, { method: 'POST',
-      headers: { ...(origin ? { origin } : {}), 'content-type': 'application/json' },
-      body: JSON.stringify({ tab: 't1', session: 'colliding-session', audio }) });
-    assert.equal((await use('/peer/remote', saved.reference, null)).status, 403);
-    assert.equal((await use('', saved.reference)).status, 409, 'foreign owner reference rejected locally');
-    assert.equal((await use('/peer/remote', { ...saved.reference, name: '/etc/passwd' })).status, 400);
-    assert.equal((await use('/peer/remote', { ...saved.reference, sessionId: 'forged' })).status, 409);
-    const old = await fetch(`${local.base}/peer/remote/${action}`, { method: 'POST', headers: { origin: local.base }, body: new FormData() });
-    assert.equal(old.status, 400, 'superseded multipart/raw endpoint is not accepted');
-  }
+  const use = (prefix, audio, origin = local.base) => fetch(`${local.base}${prefix}/transcribe`, { method: 'POST',
+    headers: { ...(origin ? { origin } : {}), 'content-type': 'application/json' },
+    body: JSON.stringify({ tab: 't1', session: 'colliding-session', audio }) });
+  assert.equal((await use('/peer/remote', saved.reference, null)).status, 403);
+  assert.equal((await use('', saved.reference)).status, 409, 'foreign owner reference rejected locally');
+  assert.equal((await use('/peer/remote', { ...saved.reference, name: '/etc/passwd' })).status, 400);
+  assert.equal((await use('/peer/remote', { ...saved.reference, sessionId: 'forged' })).status, 409);
+  const old = await fetch(`${local.base}/peer/remote/transcribe`, { method: 'POST', headers: { origin: local.base }, body: new FormData() });
+  assert.equal(old.status, 400, 'superseded multipart/raw endpoint is not accepted');
+  // Raw audio reaches another computer's ears only from that computer's
+  // peers, never from a page through /peer/, which drops the origin.
+  const relayed = await fetch(`${local.base}/peer/remote/hear`, { method: 'POST', headers: { origin: local.base }, body: 'raw audio' });
+  assert.equal(relayed.status, 403);
 });
 
 test('closing a captured tab while its attachment is being prepared never sends to another chat', async t => {

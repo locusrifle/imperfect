@@ -14,7 +14,6 @@ import { MIME, READS, createFiles, fromElsewhere } from './files.mjs';
 import { createShown } from './shown.mjs';
 import { createProjects } from './projects.mjs';
 import { createTranscriber } from './transcribe.mjs';
-import { createDictation } from './dictate.mjs';
 import { createMemoryRoute } from './memory.mjs';
 import { createPhoneApp } from './phone-app.mjs';
 import { createClipboard } from './clipboard.mjs';
@@ -375,8 +374,8 @@ export async function createGueyServer(options = {}) {
     const { file } = await openUpload(prompt.audio, target);
     return file.createReadStream();
   }
-  const transcribe = createTranscriber({ openAudio });
-  const dictation = createDictation({ runtime, hear: transcribe.hear, openAudio });
+  // Heard by Whisper on the authority: here, or sent there (system/transcribe.mjs).
+  const transcribe = createTranscriber({ openAudio, whisper: options.whisper, authority: authorityPeer });
   // The keys live in one box, on the authority: x_post here posts through it
   // when this computer has none, and the box answers /x/ for the others.
   const xBox = createXBox();
@@ -507,7 +506,7 @@ export async function createGueyServer(options = {}) {
     // The other computer cannot tell where a browser asked from, once this
     // one has asked for it; its files are refused here as they would be there.
     if (asked.some(path => READS.has(path)) && fromElsewhere(req)) { res.writeHead(403, PLAIN).end('files are read only from Workbench'); return; }
-    if (req.method === 'POST' && /^\/(upload|dictate|transcribe)$/.test(rest.split('?')[0]) && !req.headers.origin) { res.writeHead(403, PLAIN).end('exact origin required'); return; }
+    if (req.method === 'POST' && /^\/(upload|transcribe)$/.test(rest.split('?')[0]) && !req.headers.origin) { res.writeHead(403, PLAIN).end('exact origin required'); return; }
     await relayPeer(req, res, peer, rest);
   }
   async function relayPeer(req, res, peer, rest) {
@@ -517,7 +516,7 @@ export async function createGueyServer(options = {}) {
     // a stream of changes stays open, until this end goes away.
     const stop = new AbortController();
     httpRelays.add(stop);
-    const attachment = req.method === 'POST' && /^\/(upload|dictate|transcribe)$/.test(rest.split('?')[0]);
+    const attachment = req.method === 'POST' && /^\/(upload|transcribe)$/.test(rest.split('?')[0]);
     if (attachment) headers.origin = new URL(peer.url).origin;
     const slow = setTimeout(() => stop.abort(), attachment ? UPLOAD_TIMEOUT_MS : 60_000);
     res.once('close', () => { httpRelays.delete(stop); stop.abort(); });
@@ -632,7 +631,7 @@ export async function createGueyServer(options = {}) {
     if (await clipboard.handle(req, res, path)) return;
     // Byte uploads and hearing have their own body deadlines; decoding/hearing
     // can outlast a short POST, as can media generation and X processing.
-    if (req.method === 'POST' && !/^\/(?:peer\/[^/]+\/)?(?:upload|dictate|transcribe)$/.test(path) && path !== '/x/media' && path !== '/images/make') {
+    if (req.method === 'POST' && !/^\/(?:peer\/[^/]+\/)?(?:upload|transcribe)$/.test(path) && path !== '/hear' && path !== '/x/media' && path !== '/images/make') {
       const timer = setTimeout(() => {
         if (!res.headersSent) res.writeHead(408).end('timeout');
         req.destroy();
@@ -642,12 +641,8 @@ export async function createGueyServer(options = {}) {
     }
 
 
-    if (path === '/transcribe' && req.method === 'POST') {
-      if (!req.headers.origin) { res.writeHead(403).end('exact origin required'); return; }
-      await transcribe(req, res, path);
-      return;
-    }
-    if (await dictation(req, res, path)) return;
+    // /hear: another computer's recording, heard here on the authority.
+    if (await transcribe(req, res, path)) return;
 
     if (path === '/upload' && req.method === 'POST') {
       if (!req.headers.origin) { res.writeHead(403).end('exact origin required'); return; }

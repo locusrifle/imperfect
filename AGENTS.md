@@ -26,12 +26,17 @@ This checkout is theirs to change.
 1. Run `./install.sh` from this checkout (normally `~/imperfect`). It needs no
    root and is safe to repeat: if a step fails, fix the cause (usually a
    missing package or no network) and run it again. It installs the Node
-   dependencies (Node 22+, through mise if needed), fetches the mic's voice
-   model once (480 MB), starts a one-line `~/AGENTS.md` if they have neither
-   `~/AGENTS.md` nor `~/CLAUDE.md`, makes Workbench open their folders, adds
-   imperfect and Workbench to the app launcher, and starts
-   `imperfect-code.service` (systemd, user) on loopback port 5067, with what
-   agents show served beside it on 5068. Nothing listens publicly.
+   dependencies (Node 22+, through mise if needed), starts a one-line
+   `~/AGENTS.md` if they have neither `~/AGENTS.md` nor `~/CLAUDE.md`, makes
+   Workbench open their folders, adds imperfect and Workbench to the app
+   launcher, and starts `imperfect-code.service` (systemd, user) on loopback
+   port 5067, with what agents show served beside it on 5068. On the computer
+   the others follow it also builds the mic's ears once: whisper.cpp with
+   Vulkan and the Whisper large-v3-turbo model (1.6 GB), kept loaded in
+   `imperfect-whisper.service` on loopback port 5069. That build needs a C++
+   compiler, make, shaderc (`glslc`) and the Vulkan loader from their package
+   manager; their own names go one per line in `~/.imperfect/vocabulary.txt`.
+   Nothing listens publicly.
 2. Ask which keys they want, and bind them in their own config the way their
    desktop does it (on Hyprland a `bind` line in their user config, on GNOME
    or KDE a custom shortcut); never edit files their distribution owns. The

@@ -31,7 +31,6 @@
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-durable": "1.2.0",
-    "sherpa-onnx-node": "1.13.8",
     "ws": "8.21.3"
   },
   "devDependencies": {

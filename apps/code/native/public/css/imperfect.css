@@ -179,7 +179,6 @@ body.imperfect .session-actions :is(.entry-voice, .entry-browser) { min-width: 3
 /* Vector glyphs at 70%; keep the existing touch targets on every screen. */
 body.imperfect .session-actions svg { display: block; flex: none; width: 14px; height: 14px; pointer-events: none; }
 body.imperfect .session-actions .entry-attach svg { width: 11.2px; height: 11.2px; }
-body.imperfect .session-actions .entry-voice[data-state="kept"] { outline-width: 0.7px; outline-offset: 1.4px; }
 /* The usage panel is usage.css. */
 /* Model and controls above the text, with one rule over the whole bar. */
 body.imperfect .entry-status {
@@ -265,11 +264,10 @@ body.imperfect .entry-voice[hidden] { display: none !important; }
 body.imperfect .entry-voice-clock { line-height: 1; font-variant-numeric: tabular-nums; }
 body.imperfect .entry-voice-clock:empty { display: none; }
 body.imperfect .entry-voice[data-state="recording"] { color: var(--label-bright); }
-/* A recording that was not sent waits in the mic, to try again. */
-body.imperfect .entry-voice[data-state="kept"] { color: var(--label-bright); outline: 1px dashed var(--tint); outline-offset: 2px; }
-body.imperfect .entry-voice[data-state="hearing"] { color: var(--tint); animation: entry-voice-pulse 1s ease-in-out infinite; cursor: progress; }
+/* Waiting for the microphone to be allowed. */
+body.imperfect .entry-voice[data-state="opening"] { color: var(--tint); animation: entry-voice-pulse 1s ease-in-out infinite; cursor: progress; }
 @keyframes entry-voice-pulse { 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) { body.imperfect .entry-voice[data-state="hearing"] { animation: none; } }
+@media (prefers-reduced-motion: reduce) { body.imperfect .entry-voice[data-state="opening"] { animation: none; } }
 /* A tab being opened: its row is lit already, and the conversation it is
    replacing dims until the new one arrives. */
 body.imperfect #entry-output.entry-switching { opacity: 0.45; transition: opacity 0.12s 0.08s; }

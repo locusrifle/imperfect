@@ -49,7 +49,7 @@ test('Paseo CircleGauge and the waveform mic keep labels, boxes, usage and origi
       ],
     });
     assert.equal(await gauge.evaluate(n => n.getAnimations({ subtree: true }).length), 0);
-    assert.equal(await p.locator('.entry-voice:not(.entry-usage)').getAttribute('aria-label'), 'Speak a prompt');
+    assert.equal(await p.locator('.entry-voice:not(.entry-usage)').getAttribute('aria-label'), 'Record into the message');
     assert.equal(await p.locator('#entry-plus').getAttribute('for'), 'entry-files');
     await p.getByRole('button', { name: 'Usage', exact: true }).click();
     assert.equal(await p.getByRole('button', { name: 'Usage', exact: true }).getAttribute('aria-expanded'), 'true');
@@ -68,7 +68,7 @@ test('Paseo CircleGauge and the waveform mic keep labels, boxes, usage and origi
     await p.waitForTimeout(80);
     assert.equal(await p.locator('.entry-voice:not(.entry-usage) svg').evaluate(n => n.outerHTML), before);
     const mic = p.locator('.entry-voice:not(.entry-usage)');
-    await mic.evaluate(n => { n.dataset.state = 'hearing'; });
+    await mic.evaluate(n => { n.dataset.state = 'opening'; });
     assert.equal(await mic.evaluate(n => getComputedStyle(n).animationName), 'entry-voice-pulse');
     await p.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await mic.evaluate(n => getComputedStyle(n).animationName), 'none');
@@ -123,8 +123,8 @@ test('the mic retains recording, sending, retry and escape states', async () => 
       };
       try {
         const { mountVoice } = await import('/js/voice.js');
-        let reject;
-        const mic = mountVoice({ input: document.querySelector('#entry-input'), send: () => new Promise((_, no) => { reject = no; }) });
+        const held = [];
+        const mic = mountVoice({ begin: () => 'this draft', hold: (recording, where) => held.push([recording.type, where]) });
         document.querySelector('.session-actions').append(mic.button);
         const states = [], glyph = mic.button.querySelector('svg').outerHTML;
         const idleWidth = mic.button.offsetWidth;
@@ -133,15 +133,14 @@ test('the mic retains recording, sending, retry and escape states', async () => 
         const wider = mic.button.offsetWidth > idleWidth;
         const label = mic.button.getAttribute('aria-label');
         mic.button.click(); states.push(mic.button.dataset.state);
-        reject(new Error('test')); await new Promise(r => setTimeout(r)); states.push(mic.button.dataset.state);
-        dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); states.push(mic.button.dataset.state);
         const unchanged = glyph === mic.button.querySelector('svg').outerHTML;
         const clearedClock = mic.button.querySelector('.entry-voice-clock').textContent;
-        mic.button.remove(); return { states, unchanged, clock, wider, label, clearedClock };
+        mic.button.remove(); return { states, unchanged, clock, wider, label, clearedClock, held };
       } finally { globalThis.MediaRecorder = original; navigator.mediaDevices.getUserMedia = getUserMedia; }
     });
-    assert.deepEqual(result, { states: ['recording', 'hearing', 'kept', 'idle'], unchanged: true, clock: '0:00', wider: true,
-      label: 'Stop and send (Esc cancels)', clearedClock: '' });
+    // The second press stops it and hands it to the bar, for the draft it was started in.
+    assert.deepEqual(result, { states: ['recording', 'idle'], unchanged: true, clock: '0:00', wider: true,
+      label: 'Stop: the recording goes in the message (Esc lets it go)', clearedClock: '', held: [['audio/webm', 'this draft']] });
   } finally { await f.close(); }
 });
 
@@ -163,7 +162,7 @@ for (const theme of ['black', 'light-chalk']) test(`recording clock and all four
     await mic.focus(); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.querySelector('.entry-voice[data-state]').dataset.state === 'recording');
     assert.equal(await mic.locator('.entry-voice-clock').innerText(), '0:00');
-    assert.equal(await mic.getAttribute('aria-label'), 'Stop and send (Esc cancels)');
+    assert.equal(await mic.getAttribute('aria-label'), 'Stop: the recording goes in the message (Esc lets it go)');
     assert.equal(await mic.evaluate(n => getComputedStyle(n).color), await p.evaluate(() => getComputedStyle(document.body).getPropertyValue('--theme-bright').trim()).then(hex => {
       const rgb = hex.slice(1).match(/../g).map(v => parseInt(v, 16)); return `rgb(${rgb.join(', ')})`;
     }));

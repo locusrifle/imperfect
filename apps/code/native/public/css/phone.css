@@ -133,7 +133,7 @@ body.imperfect #entry-terminal.phone-layout .session-actions :is(.entry-voice, .
 }
 body.imperfect #entry-terminal.phone-layout .session-actions :is(.entry-voice, .entry-attach, .entry-usage, .entry-browser):active { background: var(--fill-2); color: var(--label); }
 body.imperfect #entry-terminal.phone-layout .session-actions .entry-voice:has(.entry-voice-clock:not(:empty)) { width: auto; padding: 0 10px; }
-body.imperfect #entry-terminal.phone-layout .session-actions .entry-voice:is([data-state="recording"], [data-state="kept"]) { color: var(--danger); outline: 0; }
+body.imperfect #entry-terminal.phone-layout .session-actions .entry-voice[data-state="recording"] { color: var(--danger); outline: 0; }
 body.imperfect #entry-terminal.phone-layout .session-actions svg { width: 18px; height: 18px; }
 body.imperfect #entry-terminal.phone-layout .session-actions .entry-attach svg { width: 15px; height: 15px; }
 /* Usage is the sheet's foot, as on the Mac. */

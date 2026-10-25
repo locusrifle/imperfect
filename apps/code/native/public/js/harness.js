@@ -99,10 +99,10 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	let usageView = null;
 	let firstSnapshot;
 	const snapshotReady = new Promise(resolve => { firstSnapshot = resolve; });
-	// Speaking a prompt is sending it: the recording goes to the computer
-	// owning the session, which hears it and sends the words (dictate,
-	// below). An attached recording's words come to the composer.
-	const voice = mountVoice({ input, fail: error => fail(error), captureTarget: captureDictationTarget, uploadTarget: captureUploadTarget, send: (recording, target, signal) => dictate(recording, target, signal) });
+	// A recording from the mic goes into the input bar as "audio 1", and is
+	// heard on the PC while the person goes on (holdRecording, below). Its
+	// words take the stand-in's place when the message is sent (submit).
+	const voice = mountVoice({ fail: error => fail(error), begin: () => ({ key: editorKey(state), upload: captureUploadTarget() }), hold: (recording, where) => void holdRecording(recording, where) });
 	let caretMirror = null;
 	// The serving connection is usable even before inventory arrives. Its internal
 	// key never names a remote destination; remote keys are verified stable IDs.
@@ -2403,10 +2403,13 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		dock.addEventListener('mousedown', event => { if (document.activeElement === input) event.preventDefault(); });
 	}
 	let attachments = [];
-	// The words in the input bar that stand for an image.
-	const standIns = () => /(image \d+)/g;
-	function nextImageNumber() {
-		const used = new Set(attachments.map(piece => Number(piece.token?.match(/\d+$/)?.[0])).filter(Number.isFinite));
+	// The words in the input bar that stand for a picture or a recording,
+	// each numbered on its own: image 1, image 2, audio 1, audio 2.
+	const standIns = () => /((?:image|audio) \d+)/g;
+	// Where a stand-in is in some text: "audio 1", never inside "audio 10".
+	const tokenAt = (text, token) => text.search(new RegExp(`(?<![\\w])${token}(?![\\w])`));
+	function nextNumber(kind, pieces = attachments) {
+		const used = new Set(pieces.map(piece => piece.token?.startsWith(`${kind} `) ? Number(piece.token.slice(kind.length + 1)) : NaN).filter(Number.isFinite));
 		let number = 1;
 		while (used.has(number)) number += 1;
 		return number;
@@ -2428,8 +2431,8 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		input.setRangeText(`${space}${words} `, start, end, 'end');
 		saveDraft(); paintCaret(); hooks.onDraftChange?.();
 	}
-	function insertImageToken(piece) {
-		piece.token = `image ${nextImageNumber()}`;
+	function insertToken(piece, kind) {
+		piece.token = `${kind} ${nextNumber(kind)}`;
 		insertWords(piece.token);
 	}
 	function dropAttachment(piece) {
@@ -2456,12 +2459,14 @@ export function mountGueyPi({ hooks = {} } = {}) {
 			const chip = el('button', null, 'entry-pending-chip');
 			chip.type = 'button';
 			chip.setAttribute('aria-label', piece.error ? `retry ${piece.name}` : `remove ${piece.name}`);
+			const audio = piece.kind === 'audio';
 			if (!piece.reference && !piece.image) chip.classList.add('is-uploading');
 			const image = Boolean(piece.imageUrl || piece.image);
-			chip.append(el('span', image ? `(image ${++imageNumber})` : piece.name));
-			if (!piece.reference && !piece.image) chip.append(el('span', uploadPercent(piece.loaded, piece.total), 'entry-pending-progress'));
-			if (piece.error) chip.append(el('span', 'failed · retry'));
-			chip.onclick = () => piece.error ? void piece.retry() : dropAttachment(piece);
+			chip.append(el('span', audio ? `(${piece.token})` : image ? `(image ${++imageNumber})` : piece.name));
+			if (!piece.reference && !piece.image && !piece.error) chip.append(el('span', uploadPercent(piece.loaded, piece.total), 'entry-pending-progress'));
+			else if (audio && piece.words == null && !piece.error) chip.append(el('span', 'hearing…', 'entry-pending-progress'));
+			if (piece.error) chip.append(el('span', audio ? 'not heard · retry' : 'failed · retry'));
+			chip.onclick = () => piece.error ? void (audio ? piece.listen().catch(() => {}) : piece.retry()) : dropAttachment(piece);
 			if (piece.error) {
 				const remove = el('button', '×', 'entry-pending-chip'); remove.type = 'button';
 				remove.setAttribute('aria-label', `remove ${piece.name}`); remove.onclick = () => dropAttachment(piece);
@@ -2481,31 +2486,66 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		return Object.freeze({ owner: ownerKey(selectedOwner), servingOwner: hereOwner() || LOCAL,
 			tabId: tab.id, sessionId: tab.sessionId ?? null, instanceId: state.instanceId });
 	}
-	async function attachPersonal(file, origin = editorKey(state), target = captureUploadTarget()) {
-		if (attachments.length >= 8) { fail(new Error('attach at most 8 files')); return; }
+	// A recording (the mic's, or an audio or video file attached) is held the
+	// same way, as "audio 1": uploaded to the session's computer, then heard
+	// at once in the background (piece.listen), so sending need not wait.
+	async function attachPersonal(file, origin = editorKey(state), target = captureUploadTarget(), { audio = false } = {}) {
+		if (!audio && attachments.filter(piece => piece.kind !== 'audio').length >= 8) { fail(new Error('attach at most 8 files')); return; }
 		if (file.size > MAX_UPLOAD_BYTES) { fail(new Error(`${file.name || 'file'} is larger than 1 GB`)); return; }
-		const piece = { name: file.name || (isImageFile(file) ? 'image' : 'file'),
-			kind: isImageFile(file) ? 'image' : 'file', loaded: 0, total: file.size || 0,
-			imageUrl: isImageFile(file) ? URL.createObjectURL(file) : null };
+		const image = !audio && isImageFile(file);
+		const piece = { name: file.name || (image ? 'image' : audio ? 'recording' : 'file'),
+			kind: audio ? 'audio' : image ? 'image' : 'file', loaded: 0, total: file.size || 0,
+			imageUrl: image ? URL.createObjectURL(file) : null };
 		const key = canonicalEditorKey(origin);
 		if (key === editorKey(state)) {
-			attachments.push(piece); if (piece.imageUrl) insertImageToken(piece);
+			attachments.push(piece); if (piece.imageUrl) insertToken(piece, 'image'); else if (audio) insertToken(piece, 'audio');
 		} else {
 			const draft = queueDrafts.get(key) ?? storedDraft(key);
-			queueDrafts.set(key, { ...draft, attachments: [...draft.attachments, piece] });
+			// A recording's stand-in goes in that draft's words too.
+			if (audio) piece.token = `audio ${nextNumber('audio', draft.attachments)}`;
+			queueDrafts.set(key, { ...draft, ...(audio ? { text: `${draft.text}${draft.text && !/\s$/.test(draft.text) ? ' ' : ''}${piece.token} ` } : {}), attachments: [...draft.attachments, piece] });
 		}
-		piece.retry = async () => {
-			if (piece.controller && !piece.controller.signal.aborted && !piece.error) return;
+		// The upload; one already going is the one waited for.
+		piece.retry = () => {
+			if (piece.controller && !piece.controller.signal.aborted && !piece.error) return piece.uploading;
 			piece.error = null; piece.loaded = 0; piece.controller = new AbortController(); paintPending();
-			try {
-				const saved = await postUpload(file, { ...target, signal: piece.controller.signal,
-					onProgress(loaded, total) { piece.loaded = loaded; piece.total = total || piece.total; paintPending(); } });
-				piece.reference = saved.reference; piece.loaded = saved.size ?? piece.total;
-			} catch (error) {
-				if (error.name !== 'AbortError') { piece.error = error; fail(error); }
-			} finally { saveDraft(); paintPending(); hooks.onDraftChange?.(); }
+			return piece.uploading = (async () => {
+				try {
+					const saved = await postUpload(file, { ...target, signal: piece.controller.signal,
+						onProgress(loaded, total) { piece.loaded = loaded; piece.total = total || piece.total; paintPending(); } });
+					piece.reference = saved.reference; piece.loaded = saved.size ?? piece.total;
+				} catch (error) {
+					if (error.name !== 'AbortError') { piece.error = error; fail(error); }
+				} finally { saveDraft(); paintPending(); hooks.onDraftChange?.(); }
+			})();
 		};
+		if (audio) {
+			// Its words, heard once; a failure is kept on the piece, and the
+			// next listen (its chip, or sending) tries again.
+			piece.listen = () => piece.listening ??= (async () => {
+				if (!piece.reference) await piece.retry();
+				if (!piece.reference) throw piece.error ?? new Error('the recording was not uploaded');
+				piece.error = null; paintPending();
+				const answer = await useUpload('transcribe', { audio: piece.reference, tab: target.tabId,
+					session: target.sessionId, instanceId: target.instanceId }, target, { signal: piece.controller.signal });
+				const words = String(answer.text ?? '').trim();
+				if (!words) throw new Error('no words were heard in it');
+				piece.words = words;
+			})().catch(error => {
+				piece.listening = null;
+				if (error.name !== 'AbortError') piece.error = error;
+				throw error;
+			}).finally(paintPending);
+		}
 		await piece.retry();
+		if (audio) piece.listen().catch(() => {});
+	}
+	// The mic's recording, for the draft it was started in.
+	async function holdRecording(recording, { key, upload }) {
+		const ending = /ogg/.test(recording.type) ? 'ogg' : /mp4/.test(recording.type) ? 'm4a' : 'webm';
+		attachmentProcessing++;
+		try { await attachPersonal(new File([recording], `recording.${ending}`, { type: recording.type }), key, upload, { audio: true }); }
+		finally { attachmentProcessing--; }
 	}
 	async function attachFile(file) {
 		if (switching) { fail(new Error('Wait for owner selection before attaching files')); return; }
@@ -2514,19 +2554,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	}
 	async function attachFileCaptured(file) {
 		if (!file) return;
-		if (isVoiceFile(file)) return voice.transcribe(file, (text, target) => {
-			const owner = ownerKey(target.owner);
-			const snapshot = owner === ownerKey(selectedOwner) ? state : transports.get(owner === ownerKey(LOCAL) ? LOCAL : owner)?.snapshot;
-			const tab = snapshot?.tabs?.find(tab => tab.id === target.tabId);
-			if (!tab || (target.sessionId != null ? tab.sessionId !== target.sessionId : !target.instanceId || target.instanceId !== snapshot.instanceId)) throw new Error('the recording’s original session is no longer open; no words were added');
-			const key = draftTargetKey(owner, target);
-			if (!switching && key === editorKey(state)) insertWords(text);
-			else {
-				const draft = queueDrafts.get(key) ?? storedDraft(key);
-				queueDrafts.set(key, restoreQueueItem(draft, { text }));
-			}
-		});
-		return attachPersonal(file);
+		return attachPersonal(file, undefined, undefined, { audio: isVoiceFile(file) });
 	}
 	filesInput.addEventListener('change', async () => {
 		const chosen = [...(filesInput.files ?? [])];
@@ -2621,15 +2649,43 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		input.value = [text, input.value].filter(Boolean).join('\n\n'); saveDraft(); hooks.onDraftChange?.();
 		attachments = sent.concat(attachments); paintPending();
 	}
+	// Each recording held in the bar, as words: those not heard yet are
+	// waited for (the bar is held still meanwhile), and one that cannot be
+	// heard keeps everything where it is.
+	let hearingForSend = false;
+	async function heardRecordings() {
+		const key = editorKey(state);
+		hearingForSend = true; input.readOnly = true;
+		try {
+			for (;;) {
+				const waiting = attachments.filter(piece => piece.kind === 'audio' && piece.words == null);
+				if (!waiting.length) return true;
+				await Promise.all(waiting.map(piece => piece.listen().catch(() => {})));
+				const failed = waiting.filter(piece => piece.error && attachments.includes(piece));
+				if (failed.length) {
+					fail(new Error(`${failed.map(piece => piece.token).join(' and ')} could not be heard (${failed[0].error.message}); nothing was sent. Send again to try again, or delete ${failed.length > 1 ? 'them' : 'it'} from the message.`));
+					return false;
+				}
+				if (editorKey(state) !== key || switching) { fail(new Error('the session changed while its recordings were heard; nothing was sent')); return false; }
+			}
+		} finally { hearingForSend = false; input.readOnly = false; }
+	}
+	// The message with each recording's words in place of its stand-in.
+	const withWords = (text, pieces) => pieces.reduce((said, piece) => {
+		const at = piece.kind === 'audio' && piece.token ? tokenAt(said, piece.token) : -1;
+		return at < 0 ? said : said.slice(0, at) + piece.words + said.slice(at + piece.token.length);
+	}, text);
 	async function submit(extra = {}) {
-		if (switching || [...acceptingPrompts].some(key => canonicalEditorKey(key) === editorKey(state))) return { accepted: false, error: 'workspace unavailable' };
+		if (hearingForSend || switching || [...acceptingPrompts].some(key => canonicalEditorKey(key) === editorKey(state))) return { accepted: false, error: 'workspace unavailable' };
 		transcriptScroller.latest();
-		const text = input.value;
-		if (attachments.some(piece => !piece.reference && !piece.image)) {
+		if (attachments.some(piece => piece.kind !== 'audio' && !piece.reference && !piece.image)) {
 			fail(new Error('wait for the file to finish uploading'));
 			return { accepted: false, error: 'uploading' };
 		}
-		const body = text.trim();
+		if (!input.value.trim() && !attachments.length) return { accepted: false, error: 'empty' };
+		if (!await heardRecordings()) return { accepted: false, error: 'not heard' };
+		const text = input.value;
+		const body = withWords(text, attachments).trim();
 		if (!body && !attachments.length) return { accepted: false, error: 'empty' };
 		const sent = attachments, sentKey = editorKey(state);
 		promptAccepting++;
@@ -2637,85 +2693,13 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		input.value = ''; saveDraft(); hooks.onDraftChange?.();
 		unlockDoneSound(); notifications.ask();
 		try {
-			const data = await sendPrompt({ text: body || 'See attached.', attachments: sent.filter(piece => piece.reference).map(({ reference, kind }) => ({ reference, kind })), ...(sent.some(piece => piece.image) ? { images: sent.map(piece => piece.image).filter(Boolean) } : {}), ...extra });
+			const files = sent.filter(piece => piece.reference && piece.kind !== 'audio');
+			const data = await sendPrompt({ text: body || 'See attached.', attachments: files.map(({ reference, kind }) => ({ reference, kind })), ...(sent.some(piece => piece.image) ? { images: sent.map(piece => piece.image).filter(Boolean) } : {}), ...extra });
 			for (const piece of sent) if (piece.imageUrl) URL.revokeObjectURL(piece.imageUrl);
 			return data && typeof data === 'object' ? { accepted: data.accepted !== false, ...data } : { accepted: true };
 		} catch (error) {
 			restoreFailedPrompt(text, sent, sentKey); fail(error);
 			return { accepted: false, error: error.message ?? String(error) };
-		}
-	}
-
-	// A recording from the mic, sent as the prompt: whatever is in the input
-	// bar goes first and is cleared, the computer serving this window hears the
-	// rest on its execution computer (POST /dictate) and sends it to the session in
-	// view, here or on another computer. Nothing sent: the bar gets back what
-	// it had, and the mic keeps the recording (voice.js).
-	const dictations = new WeakMap();
-	function captureDictationTarget() {
-		if (switching || choosing || disconnectedOwners.has(selectedOwner)) throw new Error('wait for the selected session to be ready before recording');
-		const tab = state?.tabs?.find(tab => tab.focused);
-		if (!tab) throw new Error('there is no tab in view to record for');
-		// A fresh Claude (or Pi) tab can exist before its first session id.
-		if (tab.sessionId == null && (typeof state.instanceId !== 'string' || !state.instanceId)) throw new Error('update imperfect on the session computer, or send a typed first message in this tab before recording');
-		return Object.freeze({ owner: selectedOwner, machine: ownerKey(selectedOwner), tab: tab.id, session: tab.sessionId ?? null,
-			instanceId: state.instanceId,
-			requestId: crypto.randomUUID?.() ?? String(Math.random()).slice(2) });
-	}
-	function dictationTargetMatches(target, snapshot) {
-		const tab = snapshot?.tabs?.find(tab => tab.id === target.tab);
-		return Boolean(tab && (target.session != null ? tab.sessionId === target.session : target.instanceId && target.instanceId === snapshot.instanceId));
-	}
-	async function dictate(recording, target, signal) {
-		if (!target) throw new Error('the recording has no destination; press Esc and record again');
-		const sameOwner = ownerKey(selectedOwner) === ownerKey(target.owner);
-		const snapshot = sameOwner ? state : transports.get(target.owner)?.snapshot;
-		if (!dictationTargetMatches(target, snapshot)) throw new Error('the session this recording was made for is no longer open; press Esc to let the recording go');
-		if (switching || choosing || disconnectedOwners.has(target.owner)) throw new Error('wait for the original recording session to reconnect, then retry');
-		if (!sameOwner || focusedTabId() !== target.tab) throw new Error('this recording belongs to another tab or computer; return to its original tab to retry, or press Esc to let it go');
-		let held = dictations.get(recording);
-		if (!held) {
-			if (attachments.some(piece => !piece.reference && !piece.image)) throw new Error('wait for the file to finish uploading');
-			const text = input.value, sent = attachments;
-			held = { text, sent, prompt: Object.freeze({
-				tab: target.tab, session: target.session,
-				...(target.session == null ? { instanceId: target.instanceId } : {}),
-				text: text.trim(), attachments: sent.filter(piece => piece.reference).map(({ reference, kind }) => ({ reference, kind })),
-				images: sent.map(piece => piece.image).filter(Boolean), requestId: target.requestId,
-			}) };
-			dictations.set(recording, held);
-		}
-		// Freeze the prefix, attachments and request id along with the audio.
-		// A failed prefix is restored; retry takes only that prefix back out,
-		// leaving anything newly typed/attached in the original tab alone.
-		const { text, sent, prompt } = held, sentKey = editorKey(state);
-		let removedText = '', removed = [];
-		if (text && input.value === text) { removedText = text; input.value = ''; }
-		else if (text && input.value.startsWith(text + '\n\n')) { removedText = text; input.value = input.value.slice(text.length + 2); }
-		removed = attachments.filter(piece => sent.includes(piece));
-		attachments = attachments.filter(piece => !sent.includes(piece));
-
-		paintPending(); saveDraft(); hooks.onDraftChange?.();
-		unlockDoneSound();
-		transcriptScroller.latest();
-		try {
-			const uploadTarget = { owner: target.machine, servingOwner: hereOwner() || LOCAL,
-				tabId: target.tab, sessionId: target.session, instanceId: target.instanceId };
-			if (!held.audio) held.audio = (await postUpload(recording, { ...uploadTarget, signal })).reference;
-			const answer = await useUpload('dictate', { ...prompt, audio: held.audio }, uploadTarget, { signal });
-			for (const piece of sent) if (piece.imageUrl && !attachments.includes(piece)) URL.revokeObjectURL(piece.imageUrl);
-			return answer;
-		} catch (error) {
-			// Lazy creation can give this very tab an id while HTTP is pending,
-			// but a replacement host must not receive the old prefix or files.
-			const originalSnapshot = ownerKey(selectedOwner) === ownerKey(target.owner) ? state : transports.get(target.owner)?.snapshot;
-			if (target.session != null || target.instanceId === originalSnapshot?.instanceId) {
-				const originalInView = ownerKey(selectedOwner) === ownerKey(target.owner) && focusedTabId() === target.tab && dictationTargetMatches(target, originalSnapshot);
-				const originalTab = originalSnapshot?.tabs?.find(tab => tab.id === target.tab);
-				const key = originalInView ? editorKey(state) : originalTab ? draftTargetKey(ownerKey(target.owner), { sessionId: target.session, tabId: target.tab, instanceId: target.instanceId }) : sentKey;
-				restoreFailedPrompt(removedText, removed, key);
-			}
-			throw error;
 		}
 	}
 
@@ -2797,7 +2781,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		const start = input.selectionStart ?? 0;
 		const end = input.selectionEnd ?? start;
 		const probe = event.inputType === 'deleteContentBackward' ? Math.max(0, start - 1) : start;
-		const tokens = [...input.value.matchAll(/\bimage \d+\b\s?/g)];
+		const tokens = [...input.value.matchAll(/\b(?:image|audio) \d+\b\s?/g)];
 		const hit = tokens.find(match => {
 			const from = match.index;
 			const to = from + match[0].length;
@@ -2818,7 +2802,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 		// If a token is removed by a selection, cut, or replacement rather than a
 		// single backspace, its hidden attachment must leave with it.
 		for (const piece of [...attachments]) {
-			if (!piece.token || input.value.includes(piece.token)) continue;
+			if (!piece.token || tokenAt(input.value, piece.token) >= 0) continue;
 			piece.controller?.abort();
 			if (piece.imageUrl) URL.revokeObjectURL(piece.imageUrl);
 			attachments.splice(attachments.indexOf(piece), 1);
@@ -2833,7 +2817,7 @@ export function mountGueyPi({ hooks = {} } = {}) {
 	registerKeyBinding({ label: `${MOD}+↓`, description: 'next session', code: 'ArrowDown', mod: true, when: event => !event || !keysHeld(), handler: () => sessionStep(1) });
 	for (let n = 1; n <= 5; n++) registerKeyBinding({ label: `${MOD}+${n}`, description: `session ${n} in the rail`, code: `Digit${n}`, mod: true, handler: () => enterNthTab(n) });
 	registerKeyBinding({ label: `${MOD}+Space`, description: 'start a new session', code: 'Space', mod: true, handler: () => newTab().catch(fail) });
-	registerKeyBinding({ label: `${MOD}+R`, description: 'speak a prompt (again to transcribe)', code: 'KeyR', mod: true, handler: () => voice.toggle() });
+	registerKeyBinding({ label: `${MOD}+R`, description: 'record into the message (again to stop)', code: 'KeyR', mod: true, handler: () => voice.toggle() });
 	// Before any reload: drafts of every conversation, the tab and the open
 	// windows are kept, and come back after it.
 	function prepareReload() {
